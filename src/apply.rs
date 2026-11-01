@@ -7,6 +7,7 @@ use crate::color::{Color, Palette};
 use crate::edit::{set_block, set_line, set_xml_text, truncate_at};
 use crate::fonts::{self, Global, Part};
 use crate::theme::{Appearance, Entry, Fonts, Theme};
+use crate::xfce::{self, xfconf_new};
 use crate::{bar, dry, run, spawn, xml_escape, Desktop, Dirs};
 use std::fs;
 use std::process::{Command, Stdio};
@@ -174,7 +175,7 @@ fn icon_theme_for(a: &Appearance, target: Target) -> String {
 
 /// Reads FILE, applies F, writes it back if it changed. A missing file is
 /// skipped (the user may have removed it).
-fn edit_file(file: &Path, f: impl FnOnce(&mut String)) {
+pub(crate) fn edit_file(file: &Path, f: impl FnOnce(&mut String)) {
     let Ok(old) = fs::read_to_string(file) else { return };
     let mut text = old.clone();
     f(&mut text);
@@ -185,7 +186,7 @@ fn edit_file(file: &Path, f: impl FnOnce(&mut String)) {
     }
 }
 
-fn write_file(file: &Path, text: &str) {
+pub(crate) fn write_file(file: &Path, text: &str) {
     if let Some(d) = file.parent() {
         let _ = fs::create_dir_all(d);
     }
@@ -194,11 +195,11 @@ fn write_file(file: &Path, text: &str) {
     }
 }
 
-fn xfconf(channel: &str, prop: &str, value: &str) {
+pub(crate) fn xfconf(channel: &str, prop: &str, value: &str) {
     run("xfconf-query", &["-c", channel, "-p", prop, "-s", value]);
 }
 
-fn xfconf_get(channel: &str, prop: &str) -> Option<String> {
+pub(crate) fn xfconf_get(channel: &str, prop: &str) -> Option<String> {
     if dry() {
         return None;
     }
@@ -586,130 +587,6 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     Ok(())
 }
 
-/// Sets an xfconf property of type KIND, created if it does not exist
-fn xfconf_new(channel: &str, prop: &str, kind: &str, value: &str) {
-    if dry() || xfconf_get(channel, prop).is_none() {
-        run("xfconf-query", &["-c", channel, "-p", prop, "-n", "-t", kind, "-s", value]);
-    } else {
-        xfconf(channel, prop, value);
-    }
-}
-
-/// Output of xfconf-query ARGS (None in dry mode or on failure)
-fn xfconf_out(args: &[&str]) -> Option<String> {
-    if dry() {
-        return None;
-    }
-    let out = Command::new("xfconf-query").args(args).stderr(Stdio::null()).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
-/// Names of the monitors (xrandr --listmonitors: the last field of each
-/// line after the first)
-fn monitors() -> Vec<String> {
-    if dry() {
-        return Vec::new();
-    }
-    Command::new("xrandr")
-        .arg("--listmonitors")
-        .output()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .skip(1)
-                .filter_map(|l| l.split_whitespace().last().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// XFCE wallpaper: every image setting of xfdesktop, and the ones of
-/// xfdesktop 4.20 (/backdrop/screen0/monitor<OUTPUT>/workspace<N>), created
-/// for each monitor and desktop (missing in a new session)
-fn xfce_wallpaper(image: &str) {
-    for prop in xfconf_out(&["-c", "xfce4-desktop", "-l"]).unwrap_or_default().lines() {
-        if prop.ends_with("/image-path") || prop.ends_with("/last-image") {
-            xfconf("xfce4-desktop", prop, image);
-        }
-    }
-    let count = xfconf_get("xfwm4", "/general/workspace_count")
-        .and_then(|n| n.parse::<u32>().ok())
-        .unwrap_or(4);
-    for mon in monitors() {
-        for ws in 0..count {
-            let base = format!("/backdrop/screen0/monitor{mon}/workspace{ws}");
-            xfconf_new("xfce4-desktop", &format!("{base}/last-image"), "string", image);
-            xfconf_new("xfce4-desktop", &format!("{base}/image-style"), "int", "5");
-        }
-    }
-    run("xfdesktop", &["--reload"]);
-}
-
-/// Item of the theme launcher of the panel that is not a theme (it opens
-/// packarch-folder-color): always last, at the top of the menu of a panel at
-/// the bottom of the screen (xfce shows the items in reverse order there)
-const PANEL_LAST: &str = "folder-color.desktop";
-
-/// New order of the launcher items ITEMS with ITEM (the current theme) first
-/// and PANEL_LAST last; None when ITEM is not one of them or nothing changes
-fn panel_order(items: &[&str], item: &str) -> Option<Vec<String>> {
-    if !items.contains(&item) {
-        return None;
-    }
-    let mut new = vec![item.to_string()];
-    new.extend(items.iter().filter(|i| **i != item && **i != PANEL_LAST).map(|i| i.to_string()));
-    if items.contains(&PANEL_LAST) && item != PANEL_LAST {
-        new.push(PANEL_LAST.to_string());
-    }
-    (new != items).then_some(new)
-}
-
-/// Puts the launcher of the theme ID first in the theme button of the panel
-/// (launcher plugin with the theme-<id>.desktop items): it shows the icon of
-/// its first item, the current theme, also after a restart
-fn xfce_panel_button(id: &str) {
-    let item = format!("theme-{id}.desktop");
-    let props = xfconf_out(&["-c", "xfce4-panel", "-l"]).unwrap_or_default();
-    for prop in props.lines() {
-        let Some(n) = prop.strip_prefix("/plugins/plugin-").and_then(|r| r.strip_suffix("/items")) else {
-            continue;
-        };
-        if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
-            continue;
-        }
-        let out = xfconf_out(&["-c", "xfce4-panel", "-p", prop]).unwrap_or_default();
-        let items: Vec<&str> = out.lines().map(str::trim).filter(|l| l.ends_with(".desktop")).collect();
-        let Some(new) = panel_order(&items, &item) else { continue };
-        let mut args = vec!["-c", "xfce4-panel", "-p", prop];
-        for i in &new {
-            args.extend(["-t", "string", "-s", i]);
-        }
-        run("xfconf-query", &args);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::panel_order;
-
-    #[test]
-    fn panel_order_current_first_folder_color_last() {
-        let items = ["theme-default.desktop", "theme-spark.desktop", "folder-color.desktop", "theme-hacking.desktop"];
-        assert_eq!(
-            panel_order(&items, "theme-hacking.desktop").unwrap(),
-            ["theme-hacking.desktop", "theme-default.desktop", "theme-spark.desktop", "folder-color.desktop"]
-        );
-        let ok = ["theme-spark.desktop", "theme-default.desktop", "folder-color.desktop"];
-        assert_eq!(panel_order(&ok, "theme-spark.desktop"), None);
-        assert_eq!(panel_order(&ok, "theme-unknown.desktop"), None);
-        // Without the item (panel of a former version)
-        assert_eq!(
-            panel_order(&["theme-a.desktop", "theme-b.desktop"], "theme-b.desktop").unwrap(),
-            ["theme-b.desktop", "theme-a.desktop"]
-        );
-    }
-}
-
 /// Window border theme of xfwm4
 fn xfwm4_theme(theme: &Theme) -> &str {
     theme.xfce.xfwm4_theme.as_deref().unwrap_or(&theme.appearance.gtk_theme)
@@ -739,7 +616,7 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
 
     match target {
         Target::Session => {
-            xfce_wallpaper(&wallpaper);
+            xfce::wallpaper(&wallpaper);
             xfconf("xfwm4", "/general/theme", xfwm4);
             // xfce4-terminal 1.1+: settings in xfconf (terminalrc is only
             // imported at its first start)
@@ -752,7 +629,7 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
             xfconf_new(t, "/color-bold-use-default", "bool", "true");
             xfconf_new(t, "/color-palette", "string", &palette);
             xfconf_new(t, "/tab-activity-color", "string", accent);
-            xfce_panel_button(id);
+            xfce::update_button(dirs, id);
             run(
                 "notify-send",
                 &[
@@ -773,6 +650,7 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
                 }
             });
             edit_file(&xml.join("xfwm4.xml"), |t| set_xfconf_file(t, "theme", xfwm4));
+            xfce::render_button(dirs, id)?;
             edit_file(&conf.join("xfce4/terminal/terminalrc"), |t| {
                 set_line(t, "ColorUseTheme=", "ColorUseTheme=FALSE");
                 set_line(t, "ColorForeground=", &format!("ColorForeground={fg}"));

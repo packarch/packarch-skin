@@ -22,6 +22,7 @@ mod color;
 mod edit;
 mod fonts;
 mod theme;
+mod xfce;
 
 use std::env;
 use std::fs;
@@ -47,6 +48,10 @@ Usage : packarch-skin COMMANDE
   wallpaper [THÈME]       chemin du fond d'écran de THÈME
   check [THÈME...]        vérifie les fichiers theme.toml
   openbox-menu            menu Openbox (pipemenu) des thèmes
+  chooser                 fenêtre de choix du thème (yad), avec « Couleur
+                          des dossiers »
+  panel                   remet le bouton des thèmes dans le tableau de
+                          bord XFCE, ou le met à jour (XFCE)
 
 Bureau XFCE : mêmes thèmes (/usr/share/xfcethemes/themes), sans les
 commandes bar, font et openbox-menu.";
@@ -104,6 +109,14 @@ impl Dirs {
             let themes = config.join("openbox/themes");
             let state = themes.join(".current");
             Dirs { home, config, themes, state, desktop: Desktop::Openbox }
+        }
+    }
+
+    /// Error for the commands of the XFCE desktop only
+    fn xfce_only(&self, cmd: &str) -> Result<(), String> {
+        match self.desktop {
+            Desktop::Xfce => Ok(()),
+            Desktop::Openbox => Err(format!("« {cmd} » : bureau XFCE seulement")),
         }
     }
 
@@ -269,6 +282,8 @@ fn main() {
             }
             if errors > 0 { Err(format!("{errors} thème(s) en erreur")) } else { Ok(()) }
         }
+        Some("panel") => dirs.xfce_only("panel").and_then(|()| xfce::panel(&dirs)),
+        Some("chooser") => xfce::chooser(&dirs),
         Some("openbox-menu") => dirs.openbox_only("openbox-menu").map(|()| openbox_menu(&dirs)),
         Some("-h") | Some("--help") | Some("help") => {
             println!("{USAGE}");

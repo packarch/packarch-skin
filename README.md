@@ -28,6 +28,8 @@ packarch-skin font TARGET FAMILY STYLE SIZE
 packarch-skin wallpaper [THEME]       path of the wallpaper of THEME
 packarch-skin check [THEME...]        checks the theme.toml files
 packarch-skin openbox-menu            Openbox pipemenu of the themes
+packarch-skin chooser                 theme chooser window (yad), with "Couleur des dossiers"
+packarch-skin panel                   puts the theme button back on the XFCE panel, or updates it
 ```
 
 The messages are in French.
@@ -47,6 +49,16 @@ icon and cursor themes, the color scheme, the colors of xfce4-terminal and Geany
 theme first in the theme launcher of the panel. Fonts, bar and menus are left to XFCE (`bar`,
 `font` and `openbox-menu` are refused). The current theme is in
 `~/.config/xfcethemes/.current_theme`.
+
+The theme button of the panel is a launcher plugin with one item per theme
+(`theme-<id>.desktop`, `packarch-skin apply <id>`, icon
+`/usr/share/xfcethemes/icons/<id>.png`) and `folder-color.desktop`
+(packarch-folder-color) last, at the top of its menu when the panel is at the
+bottom of the screen. `apply` puts the applied theme first (the button shows
+it); `render` writes the items and their files into `/etc/skel`; `panel`
+creates the button again (first panel, before the window list) if it was
+removed, or updates it. `chooser` shows the themes in a window, without the
+panel.
 
 Optional section of `theme.toml` for XFCE:
 
