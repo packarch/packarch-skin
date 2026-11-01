@@ -645,6 +645,25 @@ fn xfce_wallpaper(image: &str) {
     run("xfdesktop", &["--reload"]);
 }
 
+/// Item of the theme launcher of the panel that is not a theme (it opens
+/// packarch-folder-color): always last, at the top of the menu of a panel at
+/// the bottom of the screen (xfce shows the items in reverse order there)
+const PANEL_LAST: &str = "folder-color.desktop";
+
+/// New order of the launcher items ITEMS with ITEM (the current theme) first
+/// and PANEL_LAST last; None when ITEM is not one of them or nothing changes
+fn panel_order(items: &[&str], item: &str) -> Option<Vec<String>> {
+    if !items.contains(&item) {
+        return None;
+    }
+    let mut new = vec![item.to_string()];
+    new.extend(items.iter().filter(|i| **i != item && **i != PANEL_LAST).map(|i| i.to_string()));
+    if items.contains(&PANEL_LAST) && item != PANEL_LAST {
+        new.push(PANEL_LAST.to_string());
+    }
+    (new != items).then_some(new)
+}
+
 /// Puts the launcher of the theme ID first in the theme button of the panel
 /// (launcher plugin with the theme-<id>.desktop items): it shows the icon of
 /// its first item, the current theme, also after a restart
@@ -660,14 +679,34 @@ fn xfce_panel_button(id: &str) {
         }
         let out = xfconf_out(&["-c", "xfce4-panel", "-p", prop]).unwrap_or_default();
         let items: Vec<&str> = out.lines().map(str::trim).filter(|l| l.ends_with(".desktop")).collect();
-        if !items.contains(&item.as_str()) || items[0] == item {
-            continue;
-        }
-        let mut args = vec!["-c", "xfce4-panel", "-p", prop, "-t", "string", "-s", item.as_str()];
-        for i in items.iter().filter(|i| **i != item) {
+        let Some(new) = panel_order(&items, &item) else { continue };
+        let mut args = vec!["-c", "xfce4-panel", "-p", prop];
+        for i in &new {
             args.extend(["-t", "string", "-s", i]);
         }
         run("xfconf-query", &args);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::panel_order;
+
+    #[test]
+    fn panel_order_current_first_folder_color_last() {
+        let items = ["theme-default.desktop", "theme-spark.desktop", "folder-color.desktop", "theme-hacking.desktop"];
+        assert_eq!(
+            panel_order(&items, "theme-hacking.desktop").unwrap(),
+            ["theme-hacking.desktop", "theme-default.desktop", "theme-spark.desktop", "folder-color.desktop"]
+        );
+        let ok = ["theme-spark.desktop", "theme-default.desktop", "folder-color.desktop"];
+        assert_eq!(panel_order(&ok, "theme-spark.desktop"), None);
+        assert_eq!(panel_order(&ok, "theme-unknown.desktop"), None);
+        // Without the item (panel of a former version)
+        assert_eq!(
+            panel_order(&["theme-a.desktop", "theme-b.desktop"], "theme-b.desktop").unwrap(),
+            ["theme-b.desktop", "theme-a.desktop"]
+        );
     }
 }
 
