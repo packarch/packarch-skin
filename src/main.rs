@@ -15,12 +15,19 @@
 //! wallpaper, GTK, xfwm4, icon and cursor themes, the colors of
 //! xfce4-terminal and the theme button of the panel; "render" writes the
 //! default theme into the /etc/skel of packarch-xfce-settings.
+//!
+//! On the Sway desktop (XDG_CURRENT_DESKTOP, or the Sway configuration of
+//! packarch-sway-settings without Openbox themes), the themes are other
+//! copies, in /usr/share/packarch/sway/themes: "apply" sets the wallpaper,
+//! the colors of the windows, waybar, rofi, mako, kitty and hyprlock and the
+//! GTK, icon and cursor themes (sway.rs).
 
 mod apply;
 mod bar;
 mod color;
 mod edit;
 mod fonts;
+mod sway;
 mod theme;
 mod xfce;
 
@@ -37,8 +44,8 @@ Usage : packarch-skin COMMANDE
   apply [THÈME]           applique THÈME (par défaut le thème courant)
   render RACINE [THÈME]   écrit THÈME (par défaut « default ») dans les
                           fichiers de RACINE/etc/skel, sans rien lancer
-                          (construction des paquets packarch-openbox-settings et
-                          packarch-xfce-settings)
+                          (construction des paquets packarch-openbox-settings,
+                          packarch-xfce-settings et packarch-sway-settings)
   bar                     relance la barre du thème courant (Openbox)
   font [CIBLE]            police de chaque programme, ou de CIBLE (polybar,
                           rofi, terminal, geany, gtk, openbox, dunst)
@@ -54,15 +61,21 @@ Usage : packarch-skin COMMANDE
                           bord XFCE, ou le met à jour (XFCE)
 
 Bureau XFCE : mêmes thèmes (/usr/share/xfcethemes/themes), sans les
-commandes bar, font et openbox-menu.";
+commandes bar, font et openbox-menu.
+Bureau Sway : mêmes thèmes (/usr/share/packarch/sway/themes), sans les
+commandes bar, font, openbox-menu et panel.";
 
 /// Themes of the XFCE desktop (packarch-xfce-settings), under the root
 pub const XFCE_THEMES: &str = "usr/share/xfcethemes/themes";
+
+/// Themes of the Sway desktop (packarch-sway-settings), under the root
+pub const SWAY_THEMES: &str = "usr/share/packarch/sway/themes";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Desktop {
     Openbox,
     Xfce,
+    Sway,
 }
 
 pub struct Dirs {
@@ -81,23 +94,50 @@ impl Dirs {
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
             .unwrap_or_else(|| home.join(".config"));
-        let xfce = env::var("XDG_CURRENT_DESKTOP")
-            .is_ok_and(|d| d.split(':').any(|x| x.eq_ignore_ascii_case("xfce")))
-            || !config.join("openbox/themes").is_dir();
-        Dirs::with(home, config, Path::new("/"), xfce)
+        let current = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+        let is = |name: &str| current.split(':').any(|x| x.eq_ignore_ascii_case(name));
+        let root = Path::new("/");
+        let desktop = if is("sway") {
+            Desktop::Sway
+        } else if is("xfce") {
+            Desktop::Xfce
+        } else if config.join("openbox/themes").is_dir() {
+            Desktop::Openbox
+        } else if is_sway(&config, root) {
+            Desktop::Sway
+        } else {
+            Desktop::Xfce
+        };
+        Dirs::with(home, config, root, desktop)
     }
 
     /// Directories of the package root ROOT (render: home ROOT/etc/skel):
-    /// XFCE when it has the XFCE themes and no Openbox ones
+    /// Openbox when it has the Openbox themes, else Sway when it has the Sway
+    /// themes and configuration, else XFCE when it has the XFCE themes
     fn at(root: &Path) -> Dirs {
         let home = root.join("etc/skel");
         let config = home.join(".config");
-        let xfce = !config.join("openbox/themes").is_dir() && root.join(XFCE_THEMES).is_dir();
-        Dirs::with(home, config, root, xfce)
+        let desktop = if config.join("openbox/themes").is_dir() {
+            Desktop::Openbox
+        } else if is_sway(&config, root) {
+            Desktop::Sway
+        } else if root.join(XFCE_THEMES).is_dir() {
+            Desktop::Xfce
+        } else {
+            Desktop::Openbox
+        };
+        Dirs::with(home, config, root, desktop)
     }
 
-    fn with(home: PathBuf, config: PathBuf, root: &Path, xfce: bool) -> Dirs {
-        if xfce {
+    fn with(home: PathBuf, config: PathBuf, root: &Path, desktop: Desktop) -> Dirs {
+        if desktop == Desktop::Sway {
+            // PACKARCH_SKIN_SWAY_THEMES: other themes directory (tests)
+            let themes = env::var_os("PACKARCH_SKIN_SWAY_THEMES")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| root.join(SWAY_THEMES));
+            let state = config.join("sway/.current_theme");
+            Dirs { home, config, themes, state, desktop }
+        } else if desktop == Desktop::Xfce {
             // PACKARCH_SKIN_XFCE_THEMES: other themes directory (tests)
             let themes = env::var_os("PACKARCH_SKIN_XFCE_THEMES")
                 .map(PathBuf::from)
@@ -116,7 +156,7 @@ impl Dirs {
     fn xfce_only(&self, cmd: &str) -> Result<(), String> {
         match self.desktop {
             Desktop::Xfce => Ok(()),
-            Desktop::Openbox => Err(format!("« {cmd} » : bureau XFCE seulement")),
+            _ => Err(format!("« {cmd} » : bureau XFCE seulement")),
         }
     }
 
@@ -124,9 +164,16 @@ impl Dirs {
     fn openbox_only(&self, cmd: &str) -> Result<(), String> {
         match self.desktop {
             Desktop::Openbox => Ok(()),
-            Desktop::Xfce => Err(format!("« {cmd} » : bureau Openbox seulement")),
+            _ => Err(format!("« {cmd} » : bureau Openbox seulement")),
         }
     }
+}
+
+/// The Sway configuration of packarch-sway-settings (CONFIG/sway/sway-theme)
+/// and the Sway themes under ROOT
+fn is_sway(config: &Path, root: &Path) -> bool {
+    config.join("sway/sway-theme").is_file()
+        && (root.join(SWAY_THEMES).is_dir() || env::var_os("PACKARCH_SKIN_SWAY_THEMES").is_some())
 }
 
 /// PACKARCH_SKIN_DRY=1: the external commands are printed, not run (tests)

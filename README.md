@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Packarch Skin</h1>
-  <p><strong>Theme chooser of the Packarch Openbox and XFCE desktops, written in Rust</strong></p>
+  <p><strong>Theme chooser of the Packarch Openbox, XFCE and Sway desktops, written in Rust</strong></p>
 </div>
 
 Packarch Skin applies the themes of [Packarch](https://github.com/packarch/CachyOS-Packarch).
@@ -8,7 +8,8 @@ Each theme is described by a `theme.toml` file (colors, fonts, GTK, xfwm4, icon 
 themes, folder color, wallpaper, Openbox, dunst and picom settings), shipped by the
 `packarch-openbox-settings` package (`/etc/skel/.config/openbox/themes/<theme>/`, next to the
 polybar and rofi layouts of the theme). The XFCE desktop uses the same themes, copied by
-`packarch-xfce-settings` to `/usr/share/xfcethemes/themes`.
+`packarch-xfce-settings` to `/usr/share/xfcethemes/themes`, and the Sway desktop too, copied
+by `packarch-sway-settings` to `/usr/share/packarch/sway/themes`.
 
 The packages are built from the
 [myrepo-pkgs](https://github.com/packarch/myrepo-pkgs) repository (`apps/packarch-skin`).
@@ -67,6 +68,20 @@ Optional section of `theme.toml` for XFCE:
 xfwm4_theme = "Default"   # default: the GTK theme, which must have an xfwm4 directory
 ```
 
+### Sway
+
+On Sway (`XDG_CURRENT_DESKTOP`, or the `~/.config/sway/sway-theme` of
+`packarch-sway-settings` without Openbox themes), `apply` writes the wallpaper
+(`output * bg` of `sway-output`), the colors of the windows and the GTK, icon
+and cursor themes (`set $sway_…` lines of `sway-theme`, set again with
+gsettings at each start of Sway), the colors of waybar, rofi, mako, kitty and
+hyprlock (all in `~/.config/sway`) and of Geany, then runs `swaymsg reload`
+(the startup script of the configuration relaunches waybar and mako). The
+fonts are the ones of the configuration (`bar`, `font`, `openbox-menu` and
+`panel` are refused). The current theme is in `~/.config/sway/.current_theme`.
+`chooser` (Super+t, theme button of waybar) shows the themes with the
+thumbnails of `/usr/share/packarch/sway/icons/<id>.png`.
+
 ### Folder colors
 
 The `folder_color` of a theme (`#rrggbb`) is applied by
@@ -81,7 +96,8 @@ cargo test --release
 ```
 
 `PACKARCH_SKIN_DRY=1` prints the external commands instead of running them;
-`PACKARCH_SKIN_XFCE_THEMES` sets another directory of XFCE themes (tests).
+`PACKARCH_SKIN_XFCE_THEMES` and `PACKARCH_SKIN_SWAY_THEMES` set another directory of XFCE or
+Sway themes (tests).
 
 ## License
 

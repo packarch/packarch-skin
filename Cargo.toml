@@ -1,8 +1,8 @@
 [package]
 name = "packarch-skin"
-version = "1.2.0"
+version = "1.3.0"
 edition = "2024"
-description = "Theme (skin) chooser of the Packarch Openbox and XFCE desktops"
+description = "Theme (skin) chooser of the Packarch Openbox, XFCE and Sway desktops"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/packarch/packarch-skin"
 

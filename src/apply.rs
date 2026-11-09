@@ -2,6 +2,7 @@
 //! the running session or, at package build time, to the files of /etc/skel.
 //! On XFCE, only what this desktop has: wallpaper, GTK, xfwm4, icon and
 //! cursor themes, xfce4-terminal and Geany colors, theme button of the panel.
+//! On Sway: see sway.rs.
 
 use crate::color::{Color, Palette};
 use crate::edit::{set_block, set_line, set_xml_text, truncate_at};
@@ -44,22 +45,22 @@ const FASTFETCH_MODULES: [&str; 26] = [
 ];
 
 /// Colors of the roles, resolved
-struct Colors {
-    term_bg: Color,
-    term_fg: Color,
-    palette: Vec<Color>,
-    bar_bg: Color,
-    bar_fg: Color,
-    bar_alt_bg: Color,
-    bar_alt_fg: Color,
-    bar_accent: Color,
-    gradient: Vec<Color>,
-    extra: Vec<(String, Color)>,
-    rofi: [Color; 6],
-    dunst: [Color; 4],
-    border: Color,
-    fastfetch: Option<Color>,
-    polywins_inactive: Color,
+pub(crate) struct Colors {
+    pub(crate) term_bg: Color,
+    pub(crate) term_fg: Color,
+    pub(crate) palette: Vec<Color>,
+    pub(crate) bar_bg: Color,
+    pub(crate) bar_fg: Color,
+    pub(crate) bar_alt_bg: Color,
+    pub(crate) bar_alt_fg: Color,
+    pub(crate) bar_accent: Color,
+    pub(crate) gradient: Vec<Color>,
+    pub(crate) extra: Vec<(String, Color)>,
+    pub(crate) rofi: [Color; 6],
+    pub(crate) dunst: [Color; 4],
+    pub(crate) border: Color,
+    pub(crate) fastfetch: Option<Color>,
+    pub(crate) polywins_inactive: Color,
 }
 
 fn resolve(theme: &Theme) -> Result<Colors, String> {
@@ -142,7 +143,7 @@ fn is_hex_color(s: &str) -> bool {
 /// back the icon theme itself when it is already of that color) and removes
 /// the ones it made before; without folder_color, it only removes them. The
 /// package keeps the icon theme as it is (no generated theme in /etc/skel).
-fn icon_theme_for(a: &Appearance, target: Target) -> String {
+pub(crate) fn icon_theme_for(a: &Appearance, target: Target) -> String {
     let keep = a.icon_theme.clone();
     if !matches!(target, Target::Session) {
         return keep;
@@ -303,10 +304,23 @@ fn set_xfconf_file(text: &mut String, name: &str, value: &str) {
 
 /// GTK, icon and cursor themes and color scheme of A (ICONS: the icon theme
 /// to use, with its folder color), for every GTK version
-fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, target: Target) {
+pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, target: Target) {
     let conf = &dirs.config;
     let scheme = format!("'{}'", a.color_scheme);
     match target {
+        // Sway: no xfsettingsd, GTK reads GSettings (sway-theme sets them
+        // again at each start of Sway, also for the package)
+        Target::Session if dirs.desktop == Desktop::Sway => {
+            let gs = |key: &str, value: &str| {
+                run("gsettings", &["set", "org.gnome.desktop.interface", key, value]);
+            };
+            gs("gtk-theme", &a.gtk_theme);
+            gs("icon-theme", icons);
+            gs("cursor-theme", &a.cursor_theme);
+            gs("color-scheme", &scheme);
+            run("gsettings", &["set", "org.x.apps.portal", "color-scheme", &scheme]);
+        }
+        Target::Package(_) if dirs.desktop == Desktop::Sway => {}
         Target::Session => {
             xfconf("xsettings", "/Net/ThemeName", &a.gtk_theme);
             xfconf("xsettings", "/Net/IconThemeName", icons);
@@ -325,7 +339,7 @@ fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, target: Target)
             // packarch-xfce-settings, with the themes (used by GTK
             // applications started without xfsettingsd)
             let (name, what, themes) = match dirs.desktop {
-                Desktop::Openbox => ("25_packarch-openbox", "Color scheme", String::new()),
+                Desktop::Openbox | Desktop::Sway => ("25_packarch-openbox", "Color scheme", String::new()),
                 Desktop::Xfce => (
                     "25_packarch-xfce-settings",
                     "Themes and color scheme",
@@ -382,8 +396,10 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
         );
     }
     write_file(&dirs.state, &format!("{id}\n"));
-    if dirs.desktop == Desktop::Xfce {
-        return apply_xfce(dirs, entry, &theme, &c, target);
+    match dirs.desktop {
+        Desktop::Xfce => return apply_xfce(dirs, entry, &theme, &c, target),
+        Desktop::Sway => return crate::sway::apply(dirs, entry, &theme, &c, target),
+        Desktop::Openbox => {}
     }
 
     // Fonts: the global ones (fonts.toml) in place of the ones of the theme
