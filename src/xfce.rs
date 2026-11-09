@@ -285,10 +285,35 @@ pub fn panel(dirs: &Dirs) -> Result<(), String> {
     Ok(())
 }
 
+/// Lock of the theme chooser: one window at a time, whatever starts it (menu
+/// entry, theme button, keyboard shortcut). Not the file of the flock of
+/// packarch-sway-settings 1.0-3 (packarch-skin-chooser.lock): flock holds it
+/// while it runs the chooser, which would then never open. None when another
+/// chooser holds it.
+fn chooser_lock() -> Option<Option<fs::File>> {
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|d| d.is_dir())
+        .unwrap_or_else(std::env::temp_dir);
+    // The lock cannot be taken (file not writable...): the chooser opens anyway
+    let Ok(file) = fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("packarch-skin-chooser.instance")) else {
+        return Some(None);
+    };
+    match file.try_lock() {
+        Ok(()) => Some(Some(file)),
+        Err(fs::TryLockError::WouldBlock) => None,
+        Err(_) => Some(None),
+    }
+}
+
 /// "chooser": window with the themes (thumbnail, name, ✓ for the current
 /// one) and "Couleur des dossiers" (yad); applies the chosen theme and opens
-/// again, until "Fermer"
+/// again, until "Fermer". Does nothing when a chooser is already open.
 pub fn chooser(dirs: &Dirs) -> Result<(), String> {
+    // Kept until the end of the function
+    let Some(_lock) = (if dry() { Some(None) } else { chooser_lock() }) else {
+        return Ok(());
+    };
     let thumbs = dirs.themes.parent().map(|p| p.join("icons"));
     loop {
         let cur = current(dirs);

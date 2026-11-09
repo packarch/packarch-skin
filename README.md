@@ -82,6 +82,10 @@ fonts are the ones of the configuration (`bar`, `font`, `openbox-menu` and
 `chooser` (Super+t, theme button of waybar) shows the themes with the
 thumbnails of `/usr/share/packarch/sway/icons/<id>.png`.
 
+On every desktop, `chooser` opens a single window: while one is open (lock
+`$XDG_RUNTIME_DIR/packarch-skin-chooser.instance`), starting it again does
+nothing.
+
 ### Folder colors
 
 The `folder_color` of a theme (`#rrggbb`) is applied by
