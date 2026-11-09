@@ -75,7 +75,9 @@ On Sway (`XDG_CURRENT_DESKTOP`, or the `~/.config/sway/sway-theme` of
 (`output * bg` of `sway-output`), the colors of the windows and the GTK, icon
 and cursor themes (`set $sway_…` lines of `sway-theme`, set again with
 gsettings at each start of Sway), the colors of waybar, rofi, mako, kitty and
-hyprlock (all in `~/.config/sway`) and of Geany, then runs `swaymsg reload`
+hyprlock (all in `~/.config/sway`) and of Geany, the rounded corners and
+shadows of SwayFX (`corner_radius`, `shadow_blur_radius`, `shadow_color` of
+`sway-theme`, from the picom settings of the theme), then runs `swaymsg reload`
 (the startup script of the configuration relaunches waybar and mako). The
 fonts are the ones of the configuration (`bar`, `font`, `openbox-menu` and
 `panel` are refused). The current theme is in `~/.config/sway/.current_theme`.

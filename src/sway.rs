@@ -3,7 +3,10 @@
 //! wallpaper and the colors of the windows (sway-output, sway-theme), waybar,
 //! rofi, mako, kitty and hyprlock, the GTK, icon and cursor themes and the
 //! Geany colors, then reloads Sway (which relaunches waybar and mako). The
-//! fonts of the configuration are kept.
+//! fonts of the configuration are kept. With SwayFX (packarch-sway-settings
+//! 1.0-11), the rounded corners and shadows of the windows are the picom
+//! settings of the theme (corner_radius, shadow_radius, shadow_opacity), as on
+//! Openbox.
 
 use crate::apply::{edit_file, icon_theme_for, write_file, write_gtk, Colors, Target};
 use crate::color::Color;
@@ -32,6 +35,18 @@ fn window_colors(c: &Colors) -> [(&'static str, &Color); 8] {
         ("ufoc", &c.bar_alt_bg),
         ("urgt", &c.palette[1]),
         ("phol", &c.bar_bg),
+    ]
+}
+
+/// SwayFX lines of sway-theme from the picom settings of the theme: (key,
+/// line). Lines missing from the file (plain Sway) are not added.
+fn fx_lines(theme: &Theme) -> [(&'static str, String); 3] {
+    let pc = &theme.picom;
+    let opacity = pc.shadow_opacity.trim().parse::<f64>().unwrap_or(0.5).clamp(0.0, 1.0);
+    [
+        ("corner_radius ", format!("corner_radius {}", pc.corner_radius)),
+        ("shadow_blur_radius ", format!("shadow_blur_radius {}", pc.shadow_radius)),
+        ("shadow_color ", format!("shadow_color #000000{:02X}", (opacity * 255.0).round() as u8)),
     ]
 }
 
@@ -116,6 +131,9 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
         ] {
             let key = format!("set $sway_{name} ");
             set_line(t, &key, &format!("{key}{value}"));
+        }
+        for (key, line) in fx_lines(theme) {
+            set_line(t, key, &line);
         }
     });
 
