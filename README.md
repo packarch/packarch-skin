@@ -81,7 +81,7 @@ shadows of SwayFX (`corner_radius`, `shadow_blur_radius`, `shadow_color` of
 (the startup script of the configuration relaunches waybar and mako). The
 fonts are the ones of the configuration (`bar`, `font`, `openbox-menu` and
 `panel` are refused). The current theme is in `~/.config/sway/.current_theme`.
-`chooser` (Super+t, theme button of waybar) shows the themes with the
+`chooser` (Super+Shift+t, theme button of waybar) shows the themes with the
 thumbnails of `/usr/share/packarch/sway/icons/<id>.png`.
 
 On every desktop, `chooser` opens a single window: while one is open (lock
