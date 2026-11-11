@@ -123,7 +123,7 @@ pub fn items(ids: &[String], current: &str) -> Vec<String> {
 /// and of "Couleur des dossiers"
 fn launcher_files(dirs: &Dirs) -> Vec<(String, String)> {
     // Thumbnails next to the themes (ROOT/usr/share/xfcethemes when rendering)
-    let thumbs = dirs.themes.parent().map(|p| p.join("icons"));
+    let thumbs = Some(dirs.thumbs.clone());
     let mut files: Vec<(String, String)> = dirs
         .list()
         .iter()
@@ -320,7 +320,7 @@ pub fn chooser(dirs: &Dirs) -> Result<(), String> {
     let Some(_lock) = (if dry() { Some(None) } else { chooser_lock() }) else {
         return Ok(());
     };
-    let thumbs = dirs.themes.parent().map(|p| p.join("icons"));
+    let thumbs = Some(dirs.thumbs.clone());
     loop {
         let cur = current(dirs);
         let mut args: Vec<String> = [

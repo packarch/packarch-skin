@@ -1,6 +1,6 @@
 //! theme.toml: description of a theme (one per theme directory of
-//! ~/.config/openbox/themes, next to its polybar/ and rofi/ layouts; the XFCE
-//! desktop uses copies of them, in /usr/share/xfcethemes/themes).
+//! ~/.config/<desktop>/themes; on Openbox next to its polybar/ and rofi/
+//! layouts).
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -319,22 +319,6 @@ impl Entry {
             None => String::new(),
         }
     }
-}
-
-/// Themes of the directories DIRS, sorted by identifier: a theme of a
-/// directory replaces the theme of the same identifier of the next ones (the
-/// themes of the user before the ones of the system)
-pub fn list_in(dirs: &[PathBuf]) -> Vec<Entry> {
-    let mut v: Vec<Entry> = Vec::new();
-    for d in dirs {
-        for e in list(d) {
-            if !v.iter().any(|x| x.id == e.id) {
-                v.push(e);
-            }
-        }
-    }
-    v.sort_by(|a, b| a.id.cmp(&b.id));
-    v
 }
 
 /// Themes of DIR (directories with a theme.toml), sorted by identifier

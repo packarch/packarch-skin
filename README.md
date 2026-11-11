@@ -5,11 +5,17 @@
 
 Packarch Skin applies the themes of [Packarch](https://github.com/packarch/CachyOS-Packarch).
 Each theme is described by a `theme.toml` file (colors, fonts, GTK, xfwm4, icon and cursor
-themes, folder color, wallpaper, Openbox, dunst and picom settings), shipped by the
-`packarch-openbox-settings` package (`/etc/skel/.config/openbox/themes/<theme>/`, next to the
-polybar and rofi layouts of the theme). The XFCE desktop uses the same themes, copied by
-`packarch-xfce-settings` to `/usr/share/xfcethemes/themes`, and the Sway desktop too, copied
-by `packarch-sway-settings` to `/usr/share/packarch/sway/themes`.
+themes, folder color, wallpaper, Openbox, dunst and picom settings).
+
+On every desktop, the themes applied are the ones of the user, in
+`~/.config/<desktop>/themes/<theme>/`: `openbox`, `xfce4` or `sway`. The themes of the
+system are copied there: all of them the first time packarch-skin runs, then only the ones
+the user does not have (a theme added by an update of the package, or removed by the user).
+A theme already there is never replaced, so the changes of the user are kept, and it does not
+get the changes of the package either. Themes of the system: the same directories in
+`/etc/skel` (new accounts get them from there), from `packarch-openbox-settings` (next to
+the polybar and rofi layouts of each theme), `packarch-xfce-settings` and
+`packarch-sway-settings` (copies of the same `theme.toml` files).
 
 The packages are built from the
 [myrepo-pkgs](https://github.com/packarch/myrepo-pkgs) repository (`apps/packarch-skin`).
@@ -28,8 +34,7 @@ packarch-skin font TARGET FAMILY STYLE SIZE
                                       sets the font of TARGET for every theme (Openbox)
 packarch-skin wallpaper [THEME]       path of the wallpaper of THEME
 packarch-skin edit [THEME]            opens the theme.toml of THEME (default: the current theme)
-                                      in the editor; XFCE and Sway: copies it first into
-                                      ~/.config/packarch-skin/themes
+                                      in the editor
 packarch-skin check [THEME...]        checks the theme.toml files
 packarch-skin openbox-menu            Openbox pipemenu of the themes
 packarch-skin chooser                 theme chooser window (yad), with "Couleur des dossiers"
@@ -40,14 +45,13 @@ The messages are in French.
 
 ### Changing a theme
 
-Everything `apply` writes comes from the `theme.toml` of the theme: change it, then run
-`packarch-skin apply`, without rebuilding packarch-skin. On Openbox the themes are already
-the user's (`~/.config/openbox/themes`). On XFCE and Sway, the themes of the system
-(`/usr/share/...`) are replaced by the themes of `~/.config/packarch-skin/themes/<id>/`
-with the same identifier, and a new directory there adds a theme (`thumbnail.png` next to
-its `theme.toml`: thumbnail of the chooser). `edit` copies a theme of the system there and
-opens it (`$VISUAL`, else Geany); removing that directory gives the theme of the system
-back. The updates of the packages do not touch these copies.
+Everything `apply` writes comes from the `theme.toml` of the theme: change
+`~/.config/<desktop>/themes/<theme>/theme.toml` (`edit` opens it with `$VISUAL`, else
+Geany), then run `packarch-skin apply`, without rebuilding packarch-skin. A new directory
+there adds a theme (`thumbnail.png` next to its `theme.toml`: thumbnail of the chooser).
+Removing the directory of a theme gives the theme of the system back at the next command.
+The themes of `~/.config/packarch-skin/themes` (packarch-skin 1.4.0) are moved into the
+directory of the desktop.
 
 Optional keys (default: the behavior of the themes without them):
 
@@ -94,8 +98,8 @@ On XFCE (`XDG_CURRENT_DESKTOP`, or no Openbox themes), `apply` sets the wallpape
 setting of xfdesktop, and those per monitor and workspace of xfdesktop 4.20), the GTK, xfwm4,
 icon and cursor themes, the color scheme, the colors of xfce4-terminal and Geany, and puts the
 theme first in the theme launcher of the panel. Fonts, bar and menus are left to XFCE (`bar`,
-`font` and `openbox-menu` are refused). The current theme is in
-`~/.config/xfcethemes/.current_theme`.
+`font` and `openbox-menu` are refused). The themes are in `~/.config/xfce4/themes`, the
+current theme in `~/.config/xfcethemes/.current_theme`.
 
 The theme button of the panel is a launcher plugin with one item per theme
 (`theme-<id>.desktop`, `packarch-skin apply <id>`, icon
@@ -126,7 +130,8 @@ shadows of SwayFX (`corner_radius`, `shadow_blur_radius`, `shadow_color` of
 `sway-theme`, from the picom settings of the theme), then runs `swaymsg reload`
 (the startup script of the configuration relaunches waybar and mako). The
 fonts are the ones of the configuration (`bar`, `font`, `openbox-menu` and
-`panel` are refused). The current theme is in `~/.config/sway/.current_theme`.
+`panel` are refused). The themes are in `~/.config/sway/themes`, the current theme in
+`~/.config/sway/.current_theme`.
 `chooser` (Super+Shift+t, theme button of waybar) shows the themes with the
 thumbnails of `/usr/share/packarch/sway/icons/<id>.png`.
 
@@ -149,7 +154,7 @@ cargo test --release
 
 `PACKARCH_SKIN_DRY=1` prints the external commands instead of running them;
 `PACKARCH_SKIN_XFCE_THEMES` and `PACKARCH_SKIN_SWAY_THEMES` set another directory of XFCE or
-Sway themes (tests).
+Sway themes of the system (tests).
 
 ## License
 
