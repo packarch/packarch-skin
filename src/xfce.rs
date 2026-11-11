@@ -3,7 +3,7 @@
 //! window (yad), which works without the panel.
 
 use crate::apply::{self, write_file, xfconf, xfconf_get, Target};
-use crate::{current, dry, run, spawn, theme, Dirs};
+use crate::{current, dry, run, spawn, Dirs};
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -124,12 +124,18 @@ pub fn items(ids: &[String], current: &str) -> Vec<String> {
 fn launcher_files(dirs: &Dirs) -> Vec<(String, String)> {
     // Thumbnails next to the themes (ROOT/usr/share/xfcethemes when rendering)
     let thumbs = dirs.themes.parent().map(|p| p.join("icons"));
-    let mut files: Vec<(String, String)> = theme::list(&dirs.themes)
+    let mut files: Vec<(String, String)> = dirs
+        .list()
         .iter()
         .map(|e| {
             let name = e.display_name(e.load().ok().as_ref());
-            let has_thumb = thumbs.as_ref().is_some_and(|t| t.join(format!("{}.png", e.id)).is_file());
-            let icon = if has_thumb { format!("{ICONS}/{}.png", e.id) } else { "preferences-desktop-theme".into() };
+            // The thumbnail of a theme of the user is in its directory; the
+            // ones of the system in ICONS (under ROOT when rendering)
+            let icon = match e.thumbnail(thumbs.as_deref()) {
+                Some(t) if t.starts_with(&e.dir) => t.display().to_string(),
+                Some(_) => format!("{ICONS}/{}.png", e.id),
+                None => "preferences-desktop-theme".into(),
+            };
             (
                 item(&e.id),
                 format!(
@@ -165,7 +171,7 @@ fn write_launcher(dirs: &Dirs, dir: &Path) {
 }
 
 fn theme_ids(dirs: &Dirs) -> Vec<String> {
-    theme::list(&dirs.themes).into_iter().map(|e| e.id).collect()
+    dirs.list().into_iter().map(|e| e.id).collect()
 }
 
 /// Identifier of the launcher plugin of the panel that holds the themes (an
@@ -327,10 +333,9 @@ pub fn chooser(dirs: &Dirs) -> Result<(), String> {
         .map(|s| s.to_string())
         .collect();
         args.extend(["folder".into(), "Couleur des dossiers".into(), "folder-color".into()]);
-        for e in theme::list(&dirs.themes) {
+        for e in dirs.list() {
             let name = e.display_name(e.load().ok().as_ref());
-            let thumb = thumbs.as_ref().map(|t| t.join(format!("{}.png", e.id))).filter(|p| p.is_file());
-            let icon = thumb.map_or("preferences-desktop-theme".into(), |p| p.display().to_string());
+            let icon = e.thumbnail(thumbs.as_deref()).map_or("preferences-desktop-theme".into(), |p| p.display().to_string());
             let mark = if e.id == cur { "  ✓" } else { "" };
             args.extend([icon, format!("{name}{mark}"), e.id]);
         }
@@ -351,7 +356,8 @@ pub fn chooser(dirs: &Dirs) -> Result<(), String> {
             spawn("packarch-folder-color", &[], &[]);
             return Ok(());
         }
-        let entry = theme::list(&dirs.themes)
+        let entry = dirs
+            .list()
             .into_iter()
             .find(|e| e.id == choice)
             .ok_or_else(|| format!("thème inconnu : {choice}"))?;

@@ -33,6 +33,9 @@ pub struct Theme {
     /// Settings of the XFCE desktop only
     #[serde(default)]
     pub xfce: Xfce,
+    /// Settings of the Sway desktop only
+    #[serde(default)]
+    pub sway: Sway,
 }
 
 fn default_wallpaper() -> String {
@@ -67,6 +70,34 @@ pub struct Roles {
     /// Inactive windows of the window list script polywins.sh (none:
     /// bar_foreground)
     pub polywins_inactive: Option<String>,
+    /// Cursor of the terminal (none: terminal_foreground in kitty,
+    /// bar_accent in xfce4-terminal)
+    pub terminal_cursor: Option<String>,
+    /// Selected text of kitty (none: terminal_foreground on
+    /// terminal_background, reversed)
+    pub terminal_selection_background: Option<String>,
+    pub terminal_selection_foreground: Option<String>,
+    /// Windows of Sway: background of the frames and text of the unfocused
+    /// title bars (none: bar_background, bar_foreground), focused window
+    /// (bar_accent), focused window of an unfocused container
+    /// (bar_alt_foreground), unfocused windows (bar_alt_background), urgent
+    /// window (color1), split indicator (color2)
+    pub window_background: Option<String>,
+    pub window_foreground: Option<String>,
+    pub window_focused: Option<String>,
+    pub window_focused_inactive: Option<String>,
+    pub window_unfocused: Option<String>,
+    pub window_urgent: Option<String>,
+    pub window_indicator: Option<String>,
+    /// Lock screen of Sway (hyprlock): accent (none: bar_accent), text
+    /// (bar_foreground), password field (bar_alt_background, with the
+    /// lock_ring_opacity of [sway]), right and wrong password (color2,
+    /// color1)
+    pub lock_accent: Option<String>,
+    pub lock_text: Option<String>,
+    pub lock_field: Option<String>,
+    pub lock_check: Option<String>,
+    pub lock_fail: Option<String>,
 }
 
 impl Default for Roles {
@@ -93,6 +124,21 @@ impl Default for Roles {
             screenshot_border: s("accent"),
             fastfetch: None,
             polywins_inactive: None,
+            terminal_cursor: None,
+            terminal_selection_background: None,
+            terminal_selection_foreground: None,
+            window_background: None,
+            window_foreground: None,
+            window_focused: None,
+            window_focused_inactive: None,
+            window_unfocused: None,
+            window_urgent: None,
+            window_indicator: None,
+            lock_accent: None,
+            lock_text: None,
+            lock_field: None,
+            lock_check: None,
+            lock_fail: None,
         }
     }
 }
@@ -122,7 +168,8 @@ pub struct Appearance {
     pub color_scheme: String,
     /// Icon theme of the rofi menus
     pub rofi_icons: String,
-    /// Geany color scheme (~/.config/geany/colorschemes)
+    /// Geany color scheme (file of /usr/share/geany/colorschemes, from
+    /// packarch-geany-config, or of ~/.config/geany/colorschemes)
     pub geany_colors: String,
     /// Folder color of the icon theme, "#rrggbb": in the session,
     /// packarch-folder-color makes the icon theme with these folders (none:
@@ -153,6 +200,22 @@ pub struct Dunst {
     pub origin: String,
     pub border: u32,
     pub separator: u32,
+    /// Seconds before the notifications close, by urgency (0: never), for
+    /// dunst and mako (Sway)
+    #[serde(default = "timeout_low")]
+    pub timeout_low: u32,
+    #[serde(default = "timeout_normal")]
+    pub timeout_normal: u32,
+    #[serde(default)]
+    pub timeout_critical: u32,
+}
+
+fn timeout_low() -> u32 {
+    2
+}
+
+fn timeout_normal() -> u32 {
+    5
 }
 
 #[derive(Deserialize, Debug)]
@@ -166,6 +229,10 @@ pub struct Picom {
     pub shadow_offset_y: i32,
     pub blur_method: String,
     pub blur_strength: u32,
+    /// Color of the shadows (color expression; none: black), with
+    /// shadow_opacity (picom shadow-color, SwayFX shadow_color)
+    #[serde(default)]
+    pub shadow_color: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -203,6 +270,20 @@ pub struct Xfce {
     pub xfwm4_theme: Option<String>,
 }
 
+/// Sway desktop: what the other desktops do not have
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields, default)]
+pub struct Sway {
+    /// Opacity of the password field of the lock screen (0 to 1)
+    pub lock_ring_opacity: f64,
+}
+
+impl Default for Sway {
+    fn default() -> Sway {
+        Sway { lock_ring_opacity: 0.5 }
+    }
+}
+
 /// A theme of the themes directory
 pub struct Entry {
     /// Directory name (identifier used by the commands)
@@ -218,6 +299,16 @@ impl Entry {
         toml::from_str(&text).map_err(|e| format!("{} : {e}", file.display()))
     }
 
+    /// Thumbnail of the theme chooser: thumbnail.png of the theme directory,
+    /// else ICONS/<id>.png
+    pub fn thumbnail(&self, icons: Option<&Path>) -> Option<PathBuf> {
+        let own = self.dir.join("thumbnail.png");
+        if own.is_file() {
+            return Some(own);
+        }
+        icons.map(|d| d.join(format!("{}.png", self.id))).filter(|p| p.is_file())
+    }
+
     pub fn display_name(&self, theme: Option<&Theme>) -> String {
         if let Some(n) = theme.and_then(|t| t.name.clone()) {
             return n;
@@ -228,6 +319,22 @@ impl Entry {
             None => String::new(),
         }
     }
+}
+
+/// Themes of the directories DIRS, sorted by identifier: a theme of a
+/// directory replaces the theme of the same identifier of the next ones (the
+/// themes of the user before the ones of the system)
+pub fn list_in(dirs: &[PathBuf]) -> Vec<Entry> {
+    let mut v: Vec<Entry> = Vec::new();
+    for d in dirs {
+        for e in list(d) {
+            if !v.iter().any(|x| x.id == e.id) {
+                v.push(e);
+            }
+        }
+    }
+    v.sort_by(|a, b| a.id.cmp(&b.id));
+    v
 }
 
 /// Themes of DIR (directories with a theme.toml), sorted by identifier

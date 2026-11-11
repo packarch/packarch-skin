@@ -5,7 +5,7 @@
 //! On Sway: see sway.rs.
 
 use crate::color::{Color, Palette};
-use crate::edit::{set_block, set_line, set_xml_text, truncate_at};
+use crate::edit::{set_block, set_line, set_or_insert, set_xml_text, truncate_at};
 use crate::fonts::{self, Global, Part};
 use crate::theme::{Appearance, Entry, Fonts, Theme};
 use crate::xfce::{self, xfconf_new};
@@ -61,6 +61,17 @@ pub(crate) struct Colors {
     pub(crate) border: Color,
     pub(crate) fastfetch: Option<Color>,
     pub(crate) polywins_inactive: Color,
+    /// terminal_cursor (none: the default of each terminal)
+    pub(crate) term_cursor: Option<Color>,
+    pub(crate) term_sel_bg: Color,
+    pub(crate) term_sel_fg: Color,
+    /// Windows of Sway: background, foreground, focused, focused inactive,
+    /// unfocused, urgent, indicator
+    pub(crate) window: [Color; 7],
+    /// Lock screen: accent, text, field, check, fail
+    pub(crate) lock: [Color; 5],
+    /// Shadows of picom and SwayFX
+    pub(crate) shadow: Color,
 }
 
 fn resolve(theme: &Theme) -> Result<Colors, String> {
@@ -94,13 +105,45 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
     for (k, v) in &theme.polybar.extra {
         extra.push((k.clone(), p.eval(v)?));
     }
+    let term_bg = p.eval(&r.terminal_background)?;
+    let term_fg = p.eval(&r.terminal_foreground)?;
+    let bar_fg = p.eval(&r.bar_foreground)?;
+    let bar_alt_fg = p.eval(&r.bar_alt_foreground)?;
+    let bar_accent = p.eval(&r.bar_accent)?;
+    let black = p.eval("#000000")?;
+    let window = [
+        opt(&mut p, &r.window_background, &bar_bg)?,
+        opt(&mut p, &r.window_foreground, &bar_fg)?,
+        opt(&mut p, &r.window_focused, &bar_accent)?,
+        opt(&mut p, &r.window_focused_inactive, &bar_alt_fg)?,
+        opt(&mut p, &r.window_unfocused, &bar_alt_bg)?,
+        opt(&mut p, &r.window_urgent, &palette[1])?,
+        opt(&mut p, &r.window_indicator, &palette[2])?,
+    ];
+    let lock = [
+        opt(&mut p, &r.lock_accent, &bar_accent)?,
+        opt(&mut p, &r.lock_text, &bar_fg)?,
+        opt(&mut p, &r.lock_field, &bar_alt_bg)?,
+        opt(&mut p, &r.lock_check, &palette[2])?,
+        opt(&mut p, &r.lock_fail, &palette[1])?,
+    ];
+    let term_sel_bg = opt(&mut p, &r.terminal_selection_background, &term_fg)?;
+    let term_sel_fg = opt(&mut p, &r.terminal_selection_foreground, &term_bg)?;
+    let shadow = opt(&mut p, &theme.picom.shadow_color, &black)?;
+    let term_cursor = r.terminal_cursor.as_deref().map(|e| p.eval(e)).transpose()?;
     Ok(Colors {
-        term_bg: p.eval(&r.terminal_background)?,
-        term_fg: p.eval(&r.terminal_foreground)?,
+        term_cursor,
+        term_sel_bg,
+        term_sel_fg,
+        window,
+        lock,
+        shadow,
+        term_bg,
+        term_fg,
         palette,
-        bar_fg: p.eval(&r.bar_foreground)?,
-        bar_alt_fg: p.eval(&r.bar_alt_foreground)?,
-        bar_accent: p.eval(&r.bar_accent)?,
+        bar_fg,
+        bar_alt_fg,
+        bar_accent,
         gradient: p.gradient.clone(),
         extra,
         rofi: [
@@ -126,6 +169,44 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
         bar_bg,
         bar_alt_bg,
     })
+}
+
+/// kitty/colors.conf (Openbox and Sway)
+pub(crate) fn kitty_colors(c: &Colors) -> String {
+    let cursor = c.term_cursor.as_ref().unwrap_or(&c.term_fg);
+    let mut t = format!(
+        "## Colors configuration\nbackground {}\nforeground {}\nselection_background {}\nselection_foreground {}\ncursor {}\n\n",
+        c.term_bg.text, c.term_fg.text, c.term_sel_bg.text, c.term_sel_fg.text, cursor.text
+    );
+    for i in 0..8 {
+        t += &format!("color{i} {}\ncolor{} {}\n", c.palette[i].text, i + 8, c.palette[i + 8].text);
+    }
+    t
+}
+
+/// [urgency_*] sections of dunstrc (colors and timeouts of the theme)
+fn dunst_urgencies(c: &Colors, d: &crate::theme::Dunst) -> String {
+    let [bg, fg, frame, urgent] = &c.dunst;
+    format!(
+        "[urgency_low]\ntimeout = {}\nbackground = \"{bg}\"\nforeground = \"{fg}\"\nframe_color = \"{frame}\"\n\n\
+         [urgency_normal]\ntimeout = {}\nbackground = \"{bg}\"\nforeground = \"{fg}\"\nframe_color = \"{frame}\"\n\n\
+         [urgency_critical]\ntimeout = {}\nbackground = \"{bg}\"\nforeground = \"{urgent}\"\nframe_color = \"{urgent}\"\n",
+        d.timeout_low,
+        d.timeout_normal,
+        d.timeout_critical,
+        bg = bg.text,
+        fg = fg.text,
+        frame = frame.text,
+        urgent = urgent.text
+    )
+}
+
+/// Color of the optional role EXPR, else DEFAULT
+fn opt(p: &mut Palette, expr: &Option<String>, default: &Color) -> Result<Color, String> {
+    match expr {
+        Some(e) => p.eval(e),
+        None => Ok(default.clone()),
+    }
 }
 
 /// Checks that every color of THEME resolves
@@ -501,15 +582,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     // Terminal (kitty)
     let kitty = conf.join("kitty");
     if kitty.join("fonts.conf").is_file() && kitty.join("colors.conf").is_file() {
-        let mut t = format!(
-            "## Colors configuration\nbackground {bg}\nforeground {fg}\nselection_background {fg}\nselection_foreground {bg}\ncursor {fg}\n\n",
-            bg = c.term_bg.text,
-            fg = c.term_fg.text
-        );
-        for i in 0..8 {
-            t += &format!("color{i} {}\ncolor{} {}\n", c.palette[i].text, i + 8, c.palette[i + 8].text);
-        }
-        write_file(&kitty.join("colors.conf"), &t);
+        write_file(&kitty.join("colors.conf"), &kitty_colors(&c));
         if session {
             run("pkill", &["-USR1", "-x", "kitty"]);
         }
@@ -552,13 +625,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
             set_line(t, &format!("{k} = "), &format!("{k} = {v}"));
         }
         truncate_at(t, "urgency_low");
-        let [bg, fg, frame, urgent] = &c.dunst;
-        t.push_str(&format!(
-            "[urgency_low]\ntimeout = 2\nbackground = \"{bg}\"\nforeground = \"{fg}\"\nframe_color = \"{frame}\"\n\n\
-             [urgency_normal]\ntimeout = 5\nbackground = \"{bg}\"\nforeground = \"{fg}\"\nframe_color = \"{frame}\"\n\n\
-             [urgency_critical]\ntimeout = 0\nbackground = \"{bg}\"\nforeground = \"{urgent}\"\nframe_color = \"{urgent}\"\n",
-            bg = bg.text, fg = fg.text, frame = frame.text, urgent = urgent.text
-        ));
+        t.push_str(&dunst_urgencies(&c, d));
     });
     if session && run("pkill", &["-x", "dunst"]) {
         spawn("dunst", &[], &[]);
@@ -590,6 +657,9 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
         set_block(t, "#-cr-start", "#-cr-end", &format!("corner-radius = {};", pc.corner_radius));
         set_line(t, "shadow-radius = ", &format!("shadow-radius = {};", pc.shadow_radius));
         set_line(t, "shadow-opacity = ", &format!("shadow-opacity = {};", pc.shadow_opacity));
+        // Commented in picom.conf: added after shadow-opacity
+        let color = format!("shadow-color = \"{}\";", c.shadow.text);
+        set_or_insert(t, "shadow-color = ", &color, "shadow-opacity = ");
         set_line(t, "shadow-offset-x = ", &format!("shadow-offset-x = {};", pc.shadow_offset_x));
         set_line(t, "shadow-offset-y = ", &format!("shadow-offset-y = {};", pc.shadow_offset_y));
         set_line(t, "method = ", &format!("method = \"{}\";", pc.blur_method));
@@ -624,6 +694,7 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
     let icons = icon_theme_for(a, target);
     let palette = c.palette.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join(";");
     let (bg, fg, accent) = (&c.term_bg.text, &c.term_fg.text, &c.bar_accent.text);
+    let cursor = &c.term_cursor.as_ref().unwrap_or(&c.bar_accent).text;
 
     write_gtk(dirs, id, a, &icons, target);
     edit_file(&conf.join("geany/geany.conf"), |t| {
@@ -641,7 +712,7 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
             xfconf_new(t, "/color-foreground", "string", fg);
             xfconf_new(t, "/color-background", "string", bg);
             xfconf_new(t, "/color-cursor-use-default", "bool", "false");
-            xfconf_new(t, "/color-cursor", "string", accent);
+            xfconf_new(t, "/color-cursor", "string", cursor);
             xfconf_new(t, "/color-bold-use-default", "bool", "true");
             xfconf_new(t, "/color-palette", "string", &palette);
             xfconf_new(t, "/tab-activity-color", "string", accent);
@@ -672,7 +743,7 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
                 set_line(t, "ColorForeground=", &format!("ColorForeground={fg}"));
                 set_line(t, "ColorBackground=", &format!("ColorBackground={bg}"));
                 set_line(t, "ColorCursorUseDefault=", "ColorCursorUseDefault=FALSE");
-                set_line(t, "ColorCursor=", &format!("ColorCursor={accent}"));
+                set_line(t, "ColorCursor=", &format!("ColorCursor={cursor}"));
                 set_line(t, "ColorBoldUseDefault=", "ColorBoldUseDefault=TRUE");
                 set_line(t, "ColorPalette=", &format!("ColorPalette={palette}"));
                 set_line(t, "TabActivityColor=", &format!("TabActivityColor={accent}"));

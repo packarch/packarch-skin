@@ -8,10 +8,10 @@
 //! settings of the theme (corner_radius, shadow_radius, shadow_opacity), as on
 //! Openbox.
 
-use crate::apply::{edit_file, icon_theme_for, write_file, write_gtk, Colors, Target};
+use crate::apply::{edit_file, icon_theme_for, kitty_colors, write_file, write_gtk, Colors, Target};
 use crate::color::Color;
 use crate::edit::{set_line, truncate_at};
-use crate::theme::{Entry, Theme};
+use crate::theme::{Dunst, Entry, Theme};
 use crate::{run, spawn, Dirs};
 use std::path::Path;
 
@@ -21,32 +21,34 @@ const MAKO_MARK: &str = "# Mako_Colors";
 /// "rgba(R, G, B, ALPHA)" (hyprlock)
 fn rgba(c: &Color, alpha: f64) -> String {
     let v = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!("rgba({}, {}, {}, {alpha:.1})", v(c.rgb.r), v(c.rgb.g), v(c.rgb.b))
+    format!("rgba({}, {}, {}, {alpha:.2})", v(c.rgb.r), v(c.rgb.g), v(c.rgb.b))
 }
 
 /// Colors of the windows: "set $sway_cl_col_<name> <color>" lines of sway-theme
+/// (window_* roles of the theme)
 fn window_colors(c: &Colors) -> [(&'static str, &Color); 8] {
+    let [bg, fg, focused, focused_inactive, unfocused, urgent, indicator] = &c.window;
     [
-        ("bg", &c.bar_bg),
-        ("fg", &c.bar_fg),
-        ("in", &c.palette[2]),
-        ("afoc", &c.bar_accent),
-        ("ifoc", &c.bar_alt_fg),
-        ("ufoc", &c.bar_alt_bg),
-        ("urgt", &c.palette[1]),
-        ("phol", &c.bar_bg),
+        ("bg", bg),
+        ("fg", fg),
+        ("in", indicator),
+        ("afoc", focused),
+        ("ifoc", focused_inactive),
+        ("ufoc", unfocused),
+        ("urgt", urgent),
+        ("phol", bg),
     ]
 }
 
 /// SwayFX lines of sway-theme from the picom settings of the theme: (key,
 /// line). Lines missing from the file (plain Sway) are not added.
-fn fx_lines(theme: &Theme) -> [(&'static str, String); 3] {
+fn fx_lines(theme: &Theme, c: &Colors) -> [(&'static str, String); 3] {
     let pc = &theme.picom;
     let opacity = pc.shadow_opacity.trim().parse::<f64>().unwrap_or(0.5).clamp(0.0, 1.0);
     [
         ("corner_radius ", format!("corner_radius {}", pc.corner_radius)),
         ("shadow_blur_radius ", format!("shadow_blur_radius {}", pc.shadow_radius)),
-        ("shadow_color ", format!("shadow_color #000000{:02X}", (opacity * 255.0).round() as u8)),
+        ("shadow_color ", format!("shadow_color {}{:02X}", c.shadow.rgb.hex(), (opacity * 255.0).round() as u8)),
     ]
 }
 
@@ -69,33 +71,24 @@ fn waybar_colors(c: &Colors) -> String {
     t
 }
 
-/// Colors of mako/config (after MAKO_MARK)
-fn mako_colors(c: &Colors) -> String {
+/// Colors and timeouts of mako/config (after MAKO_MARK): the dunst roles and
+/// timeouts of the theme
+fn mako_colors(c: &Colors, d: &Dunst) -> String {
     let [bg, fg, frame, urgent] = &c.dunst;
     format!(
         "{MAKO_MARK}\nbackground-color={bg}\ntext-color={fg}\nborder-color={frame}\nprogress-color=over {accent}\n\n\
-         [urgency=low]\nborder-color={frame}\ndefault-timeout=2000\n\n\
-         [urgency=normal]\nborder-color={frame}\ndefault-timeout=5000\n\n\
-         [urgency=high]\nborder-color={urgent}\ntext-color={urgent}\ndefault-timeout=0\n",
+         [urgency=low]\nborder-color={frame}\ndefault-timeout={low}\n\n\
+         [urgency=normal]\nborder-color={frame}\ndefault-timeout={normal}\n\n\
+         [urgency=high]\nborder-color={urgent}\ntext-color={urgent}\ndefault-timeout={critical}\n",
+        low = d.timeout_low * 1000,
+        normal = d.timeout_normal * 1000,
+        critical = d.timeout_critical * 1000,
         bg = bg.text,
         fg = fg.text,
         frame = frame.text,
         urgent = urgent.text,
         accent = c.bar_accent.text
     )
-}
-
-/// kitty/colors.conf
-fn kitty_colors(c: &Colors) -> String {
-    let mut t = format!(
-        "## Colors configuration\nbackground {bg}\nforeground {fg}\nselection_background {fg}\nselection_foreground {bg}\ncursor {fg}\n\n",
-        bg = c.term_bg.text,
-        fg = c.term_fg.text
-    );
-    for i in 0..8 {
-        t += &format!("color{i} {}\ncolor{} {}\n", c.palette[i].text, i + 8, c.palette[i + 8].text);
-    }
-    t
 }
 
 /// Application of a theme to the Sway desktop
@@ -132,7 +125,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
             let key = format!("set $sway_{name} ");
             set_line(t, &key, &format!("{key}{value}"));
         }
-        for (key, line) in fx_lines(theme) {
+        for (key, line) in fx_lines(theme, c) {
             set_line(t, key, &line);
         }
     });
@@ -156,7 +149,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
 
     edit_file(&sway.join("mako/config"), |t| {
         truncate_at(t, MAKO_MARK);
-        t.push_str(&mako_colors(c));
+        t.push_str(&mako_colors(c, &theme.dunst));
     });
 
     let kitty = sway.join("kitty");
@@ -165,18 +158,20 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     }
 
     // Lock screen
-    let fg_hex = c.bar_fg.text.trim_start_matches('#');
+    let [accent, text, field, check, fail] = &c.lock;
+    let field_alpha = theme.sway.lock_ring_opacity.clamp(0.0, 1.0);
+    let fg_hex = text.text.trim_start_matches('#');
     edit_file(&sway.join("hyprlock.conf"), |t| {
         for (key, value) in [
             ("$wallpaper =", wallpaper.to_string()),
-            ("$accent_color =", rgba(&c.bar_accent, 1.0)),
-            ("$text_color =", rgba(&c.bar_fg, 1.0)),
+            ("$accent_color =", rgba(accent, 1.0)),
+            ("$text_color =", rgba(text, 1.0)),
             // "##": a "#" for hyprlang
             ("$text_color_hex =", format!("##{fg_hex}FF")),
-            ("$outer_color =", rgba(&c.bar_alt_bg, 0.5)),
-            ("$inner_color =", rgba(&c.bar_alt_bg, 0.5)),
-            ("$check_color =", rgba(&c.palette[2], 1.0)),
-            ("$fail_color =", rgba(&c.palette[1], 1.0)),
+            ("$outer_color =", rgba(field, field_alpha)),
+            ("$inner_color =", rgba(field, field_alpha)),
+            ("$check_color =", rgba(check, 1.0)),
+            ("$fail_color =", rgba(fail, 1.0)),
         ] {
             set_line(t, key, &format!("{key} {value}"));
         }
@@ -211,7 +206,7 @@ mod tests {
     #[test]
     fn rgba_hyprlock() {
         let c = Color { text: "#E06B74".into(), rgb: Rgb::parse("#E06B74").unwrap() };
-        assert_eq!(rgba(&c, 1.0), "rgba(224, 107, 116, 1.0)");
-        assert_eq!(rgba(&c, 0.5), "rgba(224, 107, 116, 0.5)");
+        assert_eq!(rgba(&c, 1.0), "rgba(224, 107, 116, 1.00)");
+        assert_eq!(rgba(&c, 0.5), "rgba(224, 107, 116, 0.50)");
     }
 }

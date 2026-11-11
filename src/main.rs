@@ -21,6 +21,11 @@
 //! copies, in /usr/share/packarch/sway/themes: "apply" sets the wallpaper,
 //! the colors of the windows, waybar, rofi, mako, kitty and hyprlock and the
 //! GTK, icon and cursor themes (sway.rs).
+//!
+//! On XFCE and Sway, a theme of ~/.config/packarch-skin/themes replaces the
+//! theme of the system with the same identifier, or adds one ("edit" copies
+//! a theme of the system there): the themes can be changed without root, and
+//! the updates of the packages keep the changes.
 
 mod apply;
 mod bar;
@@ -53,6 +58,9 @@ Usage : packarch-skin COMMANDE
                           choisit la police de CIBLE pour tous les thèmes
                           (openbox/themes/fonts.toml) et l'applique
   wallpaper [THÈME]       chemin du fond d'écran de THÈME
+  edit [THÈME]            ouvre le theme.toml de THÈME (par défaut le thème
+                          courant) dans l'éditeur ; XFCE et Sway : le copie
+                          d'abord dans ~/.config/packarch-skin/themes
   check [THÈME...]        vérifie les fichiers theme.toml
   openbox-menu            menu Openbox (pipemenu) des thèmes
   chooser                 fenêtre de choix du thème (yad), avec « Couleur
@@ -63,13 +71,18 @@ Usage : packarch-skin COMMANDE
 Bureau XFCE : mêmes thèmes (/usr/share/xfcethemes/themes), sans les
 commandes bar, font et openbox-menu.
 Bureau Sway : mêmes thèmes (/usr/share/packarch/sway/themes), sans les
-commandes bar, font, openbox-menu et panel.";
+commandes bar, font, openbox-menu et panel.
+XFCE et Sway : un thème de ~/.config/packarch-skin/themes remplace le thème
+du système de même identifiant (ou en ajoute un).";
 
 /// Themes of the XFCE desktop (packarch-xfce-settings), under the root
 pub const XFCE_THEMES: &str = "usr/share/xfcethemes/themes";
 
 /// Themes of the Sway desktop (packarch-sway-settings), under the root
 pub const SWAY_THEMES: &str = "usr/share/packarch/sway/themes";
+
+/// Themes of the user on XFCE and Sway, under the configuration directory
+pub const USER_THEMES: &str = "packarch-skin/themes";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Desktop {
@@ -82,6 +95,10 @@ pub struct Dirs {
     pub home: PathBuf,
     pub config: PathBuf,
     pub themes: PathBuf,
+    /// Themes of the user, before the ones of the system (XFCE and Sway
+    /// session; none with Openbox, whose themes are already the user's, and
+    /// for render)
+    pub user_themes: Option<PathBuf>,
     /// File of the current theme
     pub state: PathBuf,
     pub desktop: Desktop,
@@ -108,7 +125,11 @@ impl Dirs {
         } else {
             Desktop::Xfce
         };
-        Dirs::with(home, config, root, desktop)
+        let mut dirs = Dirs::with(home, config, root, desktop);
+        if desktop != Desktop::Openbox {
+            dirs.user_themes = Some(dirs.config.join(USER_THEMES));
+        }
+        dirs
     }
 
     /// Directories of the package root ROOT (render: home ROOT/etc/skel):
@@ -136,7 +157,7 @@ impl Dirs {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| root.join(SWAY_THEMES));
             let state = config.join("sway/.current_theme");
-            Dirs { home, config, themes, state, desktop }
+            Dirs { home, config, themes, user_themes: None, state, desktop }
         } else if desktop == Desktop::Xfce {
             // PACKARCH_SKIN_XFCE_THEMES: other themes directory (tests)
             let themes = env::var_os("PACKARCH_SKIN_XFCE_THEMES")
@@ -144,12 +165,19 @@ impl Dirs {
                 .unwrap_or_else(|| root.join(XFCE_THEMES));
             // The file of the former theme switcher of XFCE
             let state = config.join("xfcethemes/.current_theme");
-            Dirs { home, config, themes, state, desktop: Desktop::Xfce }
+            Dirs { home, config, themes, user_themes: None, state, desktop: Desktop::Xfce }
         } else {
             let themes = config.join("openbox/themes");
             let state = themes.join(".current");
-            Dirs { home, config, themes, state, desktop: Desktop::Openbox }
+            Dirs { home, config, themes, user_themes: None, state, desktop: Desktop::Openbox }
         }
+    }
+
+    /// The themes: the ones of the user first, then the ones of the system
+    pub fn list(&self) -> Vec<theme::Entry> {
+        let mut d: Vec<PathBuf> = self.user_themes.iter().cloned().collect();
+        d.push(self.themes.clone());
+        theme::list_in(&d)
     }
 
     /// Error for the commands of the XFCE desktop only
@@ -237,12 +265,12 @@ pub fn current(dirs: &Dirs) -> String {
     fs::read_to_string(&dirs.state)
         .ok()
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && dirs.themes.join(s).join("theme.toml").is_file())
+        .filter(|s| !s.is_empty() && dirs.list().iter().any(|e| e.id == *s))
         .unwrap_or_else(|| "default".into())
 }
 
 fn find(dirs: &Dirs, id: &str) -> Result<theme::Entry, String> {
-    theme::list(&dirs.themes)
+    dirs.list()
         .into_iter()
         .find(|e| e.id == id)
         .ok_or_else(|| format!("thème inconnu : {id} (voir « packarch-skin list »)"))
@@ -252,8 +280,52 @@ pub fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
+/// "edit": theme.toml of ENTRY in the editor. On XFCE and Sway, a theme of
+/// the system is first copied into the themes of the user (its relative
+/// wallpaper made absolute), which then replaces it.
+fn edit(dirs: &Dirs, entry: &theme::Entry) -> Result<(), String> {
+    let mut file = entry.dir.join("theme.toml");
+    if let Some(user) = &dirs.user_themes
+        && !entry.dir.starts_with(user)
+    {
+        let theme = entry.load()?;
+        let mut text = fs::read_to_string(&file).map_err(|e| format!("{} : {e}", file.display()))?;
+        if !Path::new(&theme.wallpaper).is_absolute() {
+            let w = entry.dir.join(&theme.wallpaper);
+            edit::set_line(&mut text, "wallpaper =", &format!("wallpaper = \"{}\"", w.display()));
+        }
+        let dir = user.join(&entry.id);
+        file = dir.join("theme.toml");
+        fs::create_dir_all(&dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+        fs::write(&file, text).map_err(|e| format!("{} : {e}", file.display()))?;
+        if let Some(t) = entry.thumbnail(dirs.themes.parent().map(|p| p.join("icons")).as_deref()) {
+            let _ = fs::copy(t, dir.join("thumbnail.png"));
+        }
+        println!("Thème {} copié dans {}", entry.id, dir.display());
+        println!("(supprimer ce dossier pour revenir au thème du système)");
+    }
+    println!("{}", file.display());
+    println!("Après modification : packarch-skin apply {}", entry.id);
+    // VISUAL, else Geany (the editor of the three desktops), else the
+    // default application (EDITOR is often a terminal editor)
+    let f = file.to_string_lossy();
+    let editor = env::var("VISUAL").ok().filter(|v| !v.trim().is_empty());
+    match editor {
+        Some(v) => spawn("sh", &["-c", &format!("{v} \"$1\""), "sh", &f], &[]),
+        None if has_command("geany") => spawn("geany", &[&f], &[]),
+        None => spawn("xdg-open", &[&f], &[]),
+    }
+    Ok(())
+}
+
+/// COMMAND is in the PATH
+fn has_command(cmd: &str) -> bool {
+    env::var_os("PATH")
+        .is_some_and(|p| env::split_paths(&p).any(|d| d.join(cmd).is_file()))
+}
+
 fn openbox_menu(dirs: &Dirs) {
-    let themes = theme::list(&dirs.themes);
+    let themes = dirs.list();
     let cur = current(dirs);
     let mut out = String::from("<openbox_pipe_menu>\n");
     out += &format!("  <separator label=\"⁌ Thèmes ({}) ⁍\"/>\n", themes.len());
@@ -278,7 +350,7 @@ fn main() {
     let arg = |i: usize| args.get(i).map(String::as_str);
     let result = match arg(0) {
         Some("list") => {
-            for e in theme::list(&dirs.themes) {
+            for e in dirs.list() {
                 let name = e.display_name(e.load().ok().as_ref());
                 println!("{}\t{}", e.id, name);
             }
@@ -315,7 +387,7 @@ fn main() {
             })
         }
         Some("check") => {
-            let all = theme::list(&dirs.themes);
+            let all = dirs.list();
             let wanted: Vec<&str> = args[1..].iter().map(String::as_str).collect();
             let mut errors = 0;
             for e in all.iter().filter(|e| wanted.is_empty() || wanted.contains(&e.id.as_str())) {
@@ -328,6 +400,10 @@ fn main() {
                 }
             }
             if errors > 0 { Err(format!("{errors} thème(s) en erreur")) } else { Ok(()) }
+        }
+        Some("edit") => {
+            let id = arg(1).map(str::to_string).unwrap_or_else(|| current(&dirs));
+            find(&dirs, &id).and_then(|e| edit(&dirs, &e))
         }
         Some("panel") => dirs.xfce_only("panel").and_then(|()| xfce::panel(&dirs)),
         Some("chooser") => xfce::chooser(&dirs),

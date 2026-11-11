@@ -34,6 +34,26 @@ fn find_key(line: &str, key: &str) -> Option<usize> {
     None
 }
 
+/// Replaces the lines that start with KEY (spaces before it ignored: not a
+/// commented line) with LINE; without one, inserts LINE after the first line
+/// that starts with AFTER. False when there is neither.
+pub fn set_or_insert(text: &mut String, key: &str, line: &str, after: &str) -> bool {
+    let starts = |l: &str, k: &str| l.trim_start().starts_with(k);
+    let mut lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+    let mut found = false;
+    for l in lines.iter_mut().filter(|l| starts(l, key)) {
+        let indent = l.len() - l.trim_start().len();
+        *l = format!("{}{line}", &l[..indent]);
+        found = true;
+    }
+    if !found {
+        let Some(i) = lines.iter().position(|l| starts(l, after)) else { return false };
+        lines.insert(i + 1, line.to_string());
+    }
+    *text = lines.join("\n");
+    true
+}
+
 /// Replaces the lines between the line START and the line END (both kept)
 /// with INNER. Returns false when the markers are missing.
 pub fn set_block(text: &mut String, start: &str, end: &str, inner: &str) -> bool {
@@ -185,6 +205,21 @@ mod tests {
         let mut t = "active_text_color='a'\ninactive_text_color='b'".to_string();
         set_line(&mut t, "active_text_color=", "active_text_color='x'");
         assert_eq!(t, "active_text_color='x'\ninactive_text_color='b'");
+    }
+
+    #[test]
+    fn insert_line() {
+        let line = "shadow-color = \"#112233\";";
+        // Commented: kept, the setting is added
+        let mut t = String::from("shadow-opacity = 0.6;\n# shadow-color = \"#000000\"\nb = 2;");
+        assert!(set_or_insert(&mut t, "shadow-color = ", line, "shadow-opacity = "));
+        assert_eq!(t, "shadow-opacity = 0.6;\nshadow-color = \"#112233\";\n# shadow-color = \"#000000\"\nb = 2;");
+        // Then replaced
+        let line2 = "shadow-color = \"#000000\";";
+        assert!(set_or_insert(&mut t, "shadow-color = ", line2, "shadow-opacity = "));
+        assert_eq!(t, "shadow-opacity = 0.6;\nshadow-color = \"#000000\";\n# shadow-color = \"#000000\"\nb = 2;");
+        let mut t = String::from("# shadow-opacity = 0.6;");
+        assert!(!set_or_insert(&mut t, "shadow-color = ", line, "shadow-opacity = "));
     }
 
     #[test]

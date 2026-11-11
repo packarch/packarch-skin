@@ -27,6 +27,9 @@ packarch-skin font [TARGET]           font of each program, or of TARGET (Openbo
 packarch-skin font TARGET FAMILY STYLE SIZE
                                       sets the font of TARGET for every theme (Openbox)
 packarch-skin wallpaper [THEME]       path of the wallpaper of THEME
+packarch-skin edit [THEME]            opens the theme.toml of THEME (default: the current theme)
+                                      in the editor; XFCE and Sway: copies it first into
+                                      ~/.config/packarch-skin/themes
 packarch-skin check [THEME...]        checks the theme.toml files
 packarch-skin openbox-menu            Openbox pipemenu of the themes
 packarch-skin chooser                 theme chooser window (yad), with "Couleur des dossiers"
@@ -34,6 +37,49 @@ packarch-skin panel                   puts the theme button back on the XFCE pan
 ```
 
 The messages are in French.
+
+### Changing a theme
+
+Everything `apply` writes comes from the `theme.toml` of the theme: change it, then run
+`packarch-skin apply`, without rebuilding packarch-skin. On Openbox the themes are already
+the user's (`~/.config/openbox/themes`). On XFCE and Sway, the themes of the system
+(`/usr/share/...`) are replaced by the themes of `~/.config/packarch-skin/themes/<id>/`
+with the same identifier, and a new directory there adds a theme (`thumbnail.png` next to
+its `theme.toml`: thumbnail of the chooser). `edit` copies a theme of the system there and
+opens it (`$VISUAL`, else Geany); removing that directory gives the theme of the system
+back. The updates of the packages do not touch these copies.
+
+Optional keys (default: the behavior of the themes without them):
+
+```toml
+[roles]                                  # color expressions, like the other roles
+terminal_cursor = "accent"               # kitty: terminal_foreground; xfce4-terminal: bar_accent
+terminal_selection_background = "..."    # kitty: terminal_foreground
+terminal_selection_foreground = "..."    # kitty: terminal_background
+window_background = "..."                # Sway windows: bar_background
+window_foreground = "..."                # bar_foreground
+window_focused = "..."                   # bar_accent
+window_focused_inactive = "..."          # bar_alt_foreground
+window_unfocused = "..."                 # bar_alt_background
+window_urgent = "..."                    # color1
+window_indicator = "..."                 # color2
+lock_accent = "..."                      # Sway lock screen (hyprlock): bar_accent
+lock_text = "..."                        # bar_foreground
+lock_field = "..."                       # bar_alt_background
+lock_check = "..."                       # color2
+lock_fail = "..."                        # color1
+
+[dunst]                                  # seconds, 0: never (dunst and mako)
+timeout_low = 2
+timeout_normal = 5
+timeout_critical = 0
+
+[picom]
+shadow_color = "#000000"                 # picom and SwayFX, with shadow_opacity
+
+[sway]
+lock_ring_opacity = 0.5                  # password field of the lock screen
+```
 
 ### Openbox
 
