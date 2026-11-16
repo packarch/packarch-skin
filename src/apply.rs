@@ -2,7 +2,7 @@
 //! the running session or, at package build time, to the files of /etc/skel.
 //! On XFCE, only what this desktop has: wallpaper, GTK, xfwm4, icon and
 //! cursor themes, xfce4-terminal and Geany colors, theme button of the panel.
-//! On Sway: see sway.rs.
+//! On labwc: see labwc.rs.
 
 use crate::color::{Color, Palette};
 use crate::edit::{set_block, set_line, set_or_insert, set_xml_text, truncate_at};
@@ -65,12 +65,9 @@ pub(crate) struct Colors {
     pub(crate) term_cursor: Option<Color>,
     pub(crate) term_sel_bg: Color,
     pub(crate) term_sel_fg: Color,
-    /// Windows of Sway: background, foreground, focused, focused inactive,
-    /// unfocused, urgent, indicator
-    pub(crate) window: [Color; 7],
     /// Lock screen: accent, text, field, check, fail
     pub(crate) lock: [Color; 5],
-    /// Shadows of picom and SwayFX
+    /// Shadows of picom and labwc
     pub(crate) shadow: Color,
 }
 
@@ -111,15 +108,6 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
     let bar_alt_fg = p.eval(&r.bar_alt_foreground)?;
     let bar_accent = p.eval(&r.bar_accent)?;
     let black = p.eval("#000000")?;
-    let window = [
-        opt(&mut p, &r.window_background, &bar_bg)?,
-        opt(&mut p, &r.window_foreground, &bar_fg)?,
-        opt(&mut p, &r.window_focused, &bar_accent)?,
-        opt(&mut p, &r.window_focused_inactive, &bar_alt_fg)?,
-        opt(&mut p, &r.window_unfocused, &bar_alt_bg)?,
-        opt(&mut p, &r.window_urgent, &palette[1])?,
-        opt(&mut p, &r.window_indicator, &palette[2])?,
-    ];
     let lock = [
         opt(&mut p, &r.lock_accent, &bar_accent)?,
         opt(&mut p, &r.lock_text, &bar_fg)?,
@@ -135,7 +123,6 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
         term_cursor,
         term_sel_bg,
         term_sel_fg,
-        window,
         lock,
         shadow,
         term_bg,
@@ -171,7 +158,7 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
     })
 }
 
-/// kitty/colors.conf (Openbox and Sway)
+/// kitty/colors.conf (Openbox and labwc)
 pub(crate) fn kitty_colors(c: &Colors) -> String {
     let cursor = c.term_cursor.as_ref().unwrap_or(&c.term_fg);
     let mut t = format!(
@@ -389,9 +376,10 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
     let conf = &dirs.config;
     let scheme = format!("'{}'", a.color_scheme);
     match target {
-        // Sway: no xfsettingsd, GTK reads GSettings (sway-theme sets them
-        // again at each start of Sway, also for the package)
-        Target::Session if dirs.desktop == Desktop::Sway => {
+        // labwc: no xfsettingsd, GTK reads GSettings (the autostart of labwc
+        // sets them again at each start from packarch-theme, also for the
+        // package)
+        Target::Session if dirs.desktop == Desktop::Labwc => {
             let gs = |key: &str, value: &str| {
                 run("gsettings", &["set", "org.gnome.desktop.interface", key, value]);
             };
@@ -401,7 +389,7 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
             gs("color-scheme", &scheme);
             run("gsettings", &["set", "org.x.apps.portal", "color-scheme", &scheme]);
         }
-        Target::Package(_) if dirs.desktop == Desktop::Sway => {}
+        Target::Package(_) if dirs.desktop == Desktop::Labwc => {}
         Target::Session => {
             xfconf("xsettings", "/Net/ThemeName", &a.gtk_theme);
             xfconf("xsettings", "/Net/IconThemeName", icons);
@@ -420,7 +408,7 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
             // packarch-xfce-settings, with the themes (used by GTK
             // applications started without xfsettingsd)
             let (name, what, themes) = match dirs.desktop {
-                Desktop::Openbox | Desktop::Sway => ("25_packarch-openbox", "Color scheme", String::new()),
+                Desktop::Openbox | Desktop::Labwc => ("25_packarch-openbox", "Color scheme", String::new()),
                 Desktop::Xfce => (
                     "25_packarch-xfce-settings",
                     "Themes and color scheme",
@@ -479,7 +467,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     write_file(&dirs.state, &format!("{id}\n"));
     match dirs.desktop {
         Desktop::Xfce => return apply_xfce(dirs, entry, &theme, &c, target),
-        Desktop::Sway => return crate::sway::apply(dirs, entry, &theme, &c, target),
+        Desktop::Labwc => return crate::labwc::apply(dirs, entry, &theme, &c, target),
         Desktop::Openbox => {}
     }
 

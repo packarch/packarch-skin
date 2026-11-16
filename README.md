@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Packarch Skin</h1>
-  <p><strong>Theme chooser of the Packarch Openbox, XFCE and Sway desktops, written in Rust</strong></p>
+  <p><strong>Theme chooser of the Packarch Openbox, XFCE and labwc desktops, written in Rust</strong></p>
 </div>
 
 Packarch Skin applies the themes of [Packarch](https://github.com/packarch/CachyOS-Packarch).
@@ -8,14 +8,14 @@ Each theme is described by a `theme.toml` file (colors, fonts, GTK, xfwm4, icon 
 themes, folder color, wallpaper, Openbox, dunst and picom settings).
 
 On every desktop, the themes applied are the ones of the user, in
-`~/.config/<desktop>/themes/<theme>/`: `openbox`, `xfce4` or `sway`. The themes of the
+`~/.config/<desktop>/themes/<theme>/`: `openbox`, `xfce4` or `labwc`. The themes of the
 system are copied there: all of them the first time packarch-skin runs, then only the ones
 the user does not have (a theme added by an update of the package, or removed by the user).
 A theme already there is never replaced, so the changes of the user are kept, and it does not
 get the changes of the package either. Themes of the system: the same directories in
 `/etc/skel` (new accounts get them from there), from `packarch-openbox-settings` (next to
 the polybar and rofi layouts of each theme), `packarch-xfce-settings` and
-`packarch-sway-settings` (copies of the same `theme.toml` files).
+`packarch-labwc-settings` (copies of the same `theme.toml` files).
 
 The packages are built from the
 [myrepo-pkgs](https://github.com/packarch/myrepo-pkgs) repository (`apps/packarch-skin`).
@@ -36,7 +36,7 @@ packarch-skin wallpaper [THEME]       path of the wallpaper of THEME
 packarch-skin edit [THEME]            opens the theme.toml of THEME (default: the current theme)
                                       in the editor
 packarch-skin check [THEME...]        checks the theme.toml files
-packarch-skin openbox-menu            Openbox pipemenu of the themes
+packarch-skin openbox-menu            Openbox pipemenu of the themes (Openbox, labwc)
 packarch-skin chooser                 theme chooser window (yad), with "Couleur des dossiers"
 packarch-skin panel                   puts the theme button back on the XFCE panel, or updates it
 ```
@@ -60,14 +60,7 @@ Optional keys (default: the behavior of the themes without them):
 terminal_cursor = "accent"               # kitty: terminal_foreground; xfce4-terminal: bar_accent
 terminal_selection_background = "..."    # kitty: terminal_foreground
 terminal_selection_foreground = "..."    # kitty: terminal_background
-window_background = "..."                # Sway windows: bar_background
-window_foreground = "..."                # bar_foreground
-window_focused = "..."                   # bar_accent
-window_focused_inactive = "..."          # bar_alt_foreground
-window_unfocused = "..."                 # bar_alt_background
-window_urgent = "..."                    # color1
-window_indicator = "..."                 # color2
-lock_accent = "..."                      # Sway lock screen (hyprlock): bar_accent
+lock_accent = "..."                      # labwc lock screen (hyprlock): bar_accent
 lock_text = "..."                        # bar_foreground
 lock_field = "..."                       # bar_alt_background
 lock_check = "..."                       # color2
@@ -79,9 +72,9 @@ timeout_normal = 5
 timeout_critical = 0
 
 [picom]
-shadow_color = "#000000"                 # picom and SwayFX, with shadow_opacity
+shadow_color = "#000000"                 # picom and labwc, with shadow_opacity
 
-[sway]
+[labwc]
 lock_ring_opacity = 0.5                  # password field of the lock screen
 ```
 
@@ -118,22 +111,25 @@ Optional section of `theme.toml` for XFCE:
 xfwm4_theme = "Default"   # default: the GTK theme, which must have an xfwm4 directory
 ```
 
-### Sway
+### labwc
 
-On Sway (`XDG_CURRENT_DESKTOP`, or the `~/.config/sway/sway-theme` of
-`packarch-sway-settings` without Openbox themes), `apply` writes the wallpaper
-(`output * bg` of `sway-output`), the colors of the windows and the GTK, icon
-and cursor themes (`set $sway_…` lines of `sway-theme`, set again with
-gsettings at each start of Sway), the colors of waybar, rofi, mako, kitty and
-hyprlock (all in `~/.config/sway`) and of Geany, the rounded corners and
-shadows of SwayFX (`corner_radius`, `shadow_blur_radius`, `shadow_color` of
-`sway-theme`, from the picom settings of the theme), then runs `swaymsg reload`
-(the startup script of the configuration relaunches waybar and mako). The
-fonts are the ones of the configuration (`bar`, `font`, `openbox-menu` and
-`panel` are refused). The themes are in `~/.config/sway/themes`, the current theme in
-`~/.config/sway/.current_theme`.
-`chooser` (Super+Shift+t, theme button of waybar) shows the themes with the
-thumbnails of `/usr/share/packarch/sway/icons/<id>.png`.
+On labwc (`XDG_CURRENT_DESKTOP`, or the `~/.config/labwc/packarch-theme` of
+`packarch-labwc-settings` without Openbox themes), `apply` writes, as on Openbox,
+the window theme (the same `OB-*` themes: labwc reads their `openbox-3` directory),
+the title bar buttons (`layout` of `[openbox]`, converted: `DLIMC` gives
+`desk:iconify,max,close`) and the fonts (`openbox`, `openbox_size`) into
+`~/.config/labwc/rc.xml`, with the rounded corners (`cornerRadius`: `corner_radius` of
+`[picom]`) and shadows (`dropShadows`, and their size and color in `themerc-override`:
+`shadow_radius`, `shadow_color`, `shadow_opacity`). Also: the wallpaper
+(`~/.config/labwc/wallpaper`, shown by swaybg), the cursor (`XCURSOR_THEME` of
+`environment`), the GTK, icon and cursor themes (gsettings, and `packarch-theme`, read
+again at each start of labwc and by the root applications), the colors of waybar, rofi,
+mako, kitty and hyprlock (all in `~/.config/labwc`) and of Geany. Then it runs
+`labwc --reconfigure` and `~/.config/labwc/scripts/startup`, which relaunches swaybg,
+waybar and mako. `bar`, `font` and `panel` are refused; `openbox-menu` gives the themes
+menu of the labwc menu. The themes are in `~/.config/labwc/themes`, the current theme in
+`~/.config/labwc/.current_theme`. `chooser` (Super+Shift+t, theme button of waybar) shows
+the themes with the thumbnails of `/usr/share/packarch/labwc/icons/<id>.png`.
 
 On every desktop, `chooser` opens a single window: while one is open (lock
 `$XDG_RUNTIME_DIR/packarch-skin-chooser.instance`), starting it again does
@@ -153,8 +149,8 @@ cargo test --release
 ```
 
 `PACKARCH_SKIN_DRY=1` prints the external commands instead of running them;
-`PACKARCH_SKIN_XFCE_THEMES` and `PACKARCH_SKIN_SWAY_THEMES` set another directory of XFCE or
-Sway themes of the system (tests).
+`PACKARCH_SKIN_XFCE_THEMES` and `PACKARCH_SKIN_LABWC_THEMES` set another directory of XFCE or
+labwc themes of the system (tests).
 
 ## License
 

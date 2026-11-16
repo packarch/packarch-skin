@@ -33,9 +33,9 @@ pub struct Theme {
     /// Settings of the XFCE desktop only
     #[serde(default)]
     pub xfce: Xfce,
-    /// Settings of the Sway desktop only
+    /// Settings of the labwc desktop only
     #[serde(default)]
-    pub sway: Sway,
+    pub labwc: Labwc,
 }
 
 fn default_wallpaper() -> String {
@@ -77,21 +77,9 @@ pub struct Roles {
     /// terminal_background, reversed)
     pub terminal_selection_background: Option<String>,
     pub terminal_selection_foreground: Option<String>,
-    /// Windows of Sway: background of the frames and text of the unfocused
-    /// title bars (none: bar_background, bar_foreground), focused window
-    /// (bar_accent), focused window of an unfocused container
-    /// (bar_alt_foreground), unfocused windows (bar_alt_background), urgent
-    /// window (color1), split indicator (color2)
-    pub window_background: Option<String>,
-    pub window_foreground: Option<String>,
-    pub window_focused: Option<String>,
-    pub window_focused_inactive: Option<String>,
-    pub window_unfocused: Option<String>,
-    pub window_urgent: Option<String>,
-    pub window_indicator: Option<String>,
-    /// Lock screen of Sway (hyprlock): accent (none: bar_accent), text
+    /// Lock screen of labwc (hyprlock): accent (none: bar_accent), text
     /// (bar_foreground), password field (bar_alt_background, with the
-    /// lock_ring_opacity of [sway]), right and wrong password (color2,
+    /// lock_ring_opacity of [labwc]), right and wrong password (color2,
     /// color1)
     pub lock_accent: Option<String>,
     pub lock_text: Option<String>,
@@ -127,13 +115,6 @@ impl Default for Roles {
             terminal_cursor: None,
             terminal_selection_background: None,
             terminal_selection_foreground: None,
-            window_background: None,
-            window_foreground: None,
-            window_focused: None,
-            window_focused_inactive: None,
-            window_unfocused: None,
-            window_urgent: None,
-            window_indicator: None,
             lock_accent: None,
             lock_text: None,
             lock_field: None,
@@ -201,7 +182,7 @@ pub struct Dunst {
     pub border: u32,
     pub separator: u32,
     /// Seconds before the notifications close, by urgency (0: never), for
-    /// dunst and mako (Sway)
+    /// dunst and mako (labwc)
     #[serde(default = "timeout_low")]
     pub timeout_low: u32,
     #[serde(default = "timeout_normal")]
@@ -230,7 +211,7 @@ pub struct Picom {
     pub blur_method: String,
     pub blur_strength: u32,
     /// Color of the shadows (color expression; none: black), with
-    /// shadow_opacity (picom shadow-color, SwayFX shadow_color)
+    /// shadow_opacity (picom shadow-color, shadows of labwc)
     #[serde(default)]
     pub shadow_color: Option<String>,
 }
@@ -270,17 +251,17 @@ pub struct Xfce {
     pub xfwm4_theme: Option<String>,
 }
 
-/// Sway desktop: what the other desktops do not have
+/// labwc desktop: what the other desktops do not have
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields, default)]
-pub struct Sway {
+pub struct Labwc {
     /// Opacity of the password field of the lock screen (0 to 1)
     pub lock_ring_opacity: f64,
 }
 
-impl Default for Sway {
-    fn default() -> Sway {
-        Sway { lock_ring_opacity: 0.5 }
+impl Default for Labwc {
+    fn default() -> Labwc {
+        Labwc { lock_ring_opacity: 0.5 }
     }
 }
 

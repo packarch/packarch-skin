@@ -292,10 +292,8 @@ pub fn panel(dirs: &Dirs) -> Result<(), String> {
 }
 
 /// Lock of the theme chooser: one window at a time, whatever starts it (menu
-/// entry, theme button, keyboard shortcut). Not the file of the flock of
-/// packarch-sway-settings 1.0-3 (packarch-skin-chooser.lock): flock holds it
-/// while it runs the chooser, which would then never open. None when another
-/// chooser holds it.
+/// entry, theme button, keyboard shortcut). None when another chooser holds
+/// it.
 fn chooser_lock() -> Option<Option<fs::File>> {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
