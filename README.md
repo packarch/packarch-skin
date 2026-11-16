@@ -123,7 +123,11 @@ the title bar buttons (`layout` of `[openbox]`, converted: `DLIMC` gives
 `shadow_radius`, `shadow_color`, `shadow_opacity`). Also: the wallpaper
 (`~/.config/labwc/wallpaper`, shown by swaybg), the cursor (`XCURSOR_THEME` of
 `environment`), the GTK, icon and cursor themes (gsettings, and `packarch-theme`, read
-again at each start of labwc and by the root applications), the colors of waybar, rofi,
+again at each start of labwc and by the root applications), the bar of the theme (as its
+polybar on Openbox: `themes/<id>/waybar/config` and `style.css`, copied to
+`~/.config/labwc/waybar` with the `@color@` of the config replaced by the colors of the
+theme; colors, gradient and polybar font of the theme in `waybar/colors.css`; a theme of
+`~/.config/labwc/themes` without bar takes the one of the system theme), the colors of rofi,
 mako, kitty and hyprlock (all in `~/.config/labwc`) and of Geany. Then it runs
 `labwc --reconfigure` and `~/.config/labwc/scripts/startup`, which relaunches swaybg,
 waybar and mako. `bar`, `font` and `panel` are refused; `openbox-menu` gives the themes

@@ -4,7 +4,8 @@
 //! on Openbox, the window theme, title bar buttons and fonts of the theme into
 //! rc.xml, with the rounded corners and shadows of its picom settings
 //! (cornerRadius, dropShadows, shadows of themerc-override). Also: the
-//! wallpaper (swaybg), the colors of waybar, rofi, mako, kitty and hyprlock,
+//! wallpaper (swaybg), the bar of the theme (waybar: config and style.css of
+//! themes/ID/waybar, colors and font in colors.css), the colors of rofi, mako, kitty and hyprlock,
 //! the GTK, icon and cursor themes (GSettings and packarch-theme, read again
 //! at each start of labwc) and the Geany colors, then reloads labwc and
 //! relaunches swaybg, waybar and mako (scripts/startup).
@@ -69,21 +70,66 @@ fn shadow_opacity(theme: &Theme) -> f64 {
     theme.picom.shadow_opacity.trim().parse::<f64>().unwrap_or(0.5).clamp(0.0, 1.0)
 }
 
-/// waybar/colors.css
-fn waybar_colors(c: &Colors) -> String {
-    let mut t = String::from("/* Couleurs du thème, écrites par packarch-skin */\n\n");
-    for (name, col) in [
-        ("background", &c.bar_bg),
-        ("background-alt", &c.bar_alt_bg),
-        ("foreground", &c.bar_fg),
-        ("foreground-alt", &c.bar_alt_fg),
-        ("selected", &c.bar_accent),
-    ] {
-        t += &format!("@define-color {name:<14} {};\n", col.text);
-    }
+/// Colors of the bar for waybar: name and color (style.css: @define-color
+/// NAME; config: @NAME@ in the Pango markup of the modules). gradient1..6:
+/// the [polybar] gradient of the theme (else the alternate background).
+fn bar_colors(c: &Colors) -> Vec<(String, &Color)> {
+    let mut v: Vec<(String, &Color)> = vec![
+        ("background".into(), &c.bar_bg),
+        ("background-alt".into(), &c.bar_alt_bg),
+        ("foreground".into(), &c.bar_fg),
+        ("foreground-alt".into(), &c.bar_alt_fg),
+        ("selected".into(), &c.bar_accent),
+        ("accent".into(), &c.bar_accent),
+    ];
     let names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
-    for (name, col) in names.iter().zip(&c.palette) {
-        t += &format!("@define-color {name:<14} {};\n", col.text);
+    for (i, col) in c.palette.iter().enumerate().take(16) {
+        let name = names[i % 8];
+        v.push((if i < 8 { name.to_string() } else { format!("bright-{name}") }, col));
+    }
+    for i in 1..=6 {
+        v.push((format!("gradient{i}"), c.gradient.get(i).unwrap_or(&c.bar_alt_bg)));
+    }
+    v
+}
+
+/// Font of the bar: the polybar font of the theme ("Family:style:size=N;3"),
+/// with the Nerd Font symbols as fallback
+fn bar_font(polybar: &str) -> String {
+    let spec = polybar.split(';').next().unwrap_or("");
+    let mut parts = spec.split(':');
+    let family = parts.next().unwrap_or("").trim();
+    let family = if family.is_empty() { "JetBrains Mono" } else { family };
+    let mut size = 10.0;
+    let mut bold = false;
+    for p in parts {
+        let p = p.trim();
+        if let Some(v) = p.strip_prefix("size=").or_else(|| p.strip_prefix("pixelsize=")) {
+            size = v.parse().unwrap_or(size);
+        } else if p.to_ascii_lowercase().contains("bold") {
+            bold = true;
+        }
+    }
+    format!(
+        "* {{\n    font-family: \"{family}\", \"Symbols Nerd Font\", \"JetBrainsMono Nerd Font\", sans-serif;\n    font-size: {size}pt;\n    font-weight: {};\n}}\n",
+        if bold { "bold" } else { "normal" }
+    )
+}
+
+/// waybar/colors.css: colors and font of the theme
+fn waybar_colors(c: &Colors, polybar_font: &str) -> String {
+    let mut t = String::from("/* Couleurs et police du thème, écrites par packarch-skin */\n\n");
+    for (name, col) in bar_colors(c) {
+        t += &format!("@define-color {name:<16} {};\n", col.text);
+    }
+    t + "\n" + &bar_font(polybar_font)
+}
+
+/// waybar/config of the theme: its @NAME@ colors replaced
+fn waybar_config(text: &str, c: &Colors) -> String {
+    let mut t = text.to_string();
+    for (name, col) in bar_colors(c) {
+        t = t.replace(&format!("@{name}@"), &col.text);
     }
     t
 }
@@ -182,7 +228,18 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
         ),
     );
 
-    write_file(&labwc.join("waybar/colors.css"), &waybar_colors(c));
+    // Bar of the theme (themes/ID/waybar, as its polybar on Openbox; a theme
+    // of ~/.config/labwc/themes without one: the bar of the system theme)
+    let bar_dirs = [Some(entry.dir.join("waybar")), dirs.system.as_ref().map(|s| s.join(id).join("waybar"))];
+    if let Some(src) = bar_dirs.into_iter().flatten().find(|d| d.join("config").is_file()) {
+        if let Ok(text) = std::fs::read_to_string(src.join("config")) {
+            write_file(&labwc.join("waybar/config"), &waybar_config(&text, c));
+        }
+        if let Ok(text) = std::fs::read_to_string(src.join("style.css")) {
+            write_file(&labwc.join("waybar/style.css"), &text);
+        }
+    }
+    write_file(&labwc.join("waybar/colors.css"), &waybar_colors(c, &f.polybar));
 
     let r = &c.rofi;
     write_file(
@@ -258,7 +315,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
 
 #[cfg(test)]
 mod tests {
-    use super::{rgba, shell_quote, titlebar_layout};
+    use super::{bar_font, rgba, shell_quote, titlebar_layout};
     use crate::color::{Color, Rgb};
 
     #[test]
@@ -275,6 +332,16 @@ mod tests {
         assert_eq!(titlebar_layout("LIMC"), ":iconify,max,close");
         assert_eq!(titlebar_layout("IMC"), ":iconify,max,close");
         assert_eq!(titlebar_layout("CLSD"), "close:shade,desk");
+    }
+
+    #[test]
+    fn fonts() {
+        let f = bar_font("JetBrains Mono:bold:size=10;3");
+        assert!(f.contains("font-family: \"JetBrains Mono\""));
+        assert!(f.contains("font-size: 10pt;"));
+        assert!(f.contains("font-weight: bold;"));
+        let f = bar_font("Iosevka:size=11;3");
+        assert!(f.contains("\"Iosevka\"") && f.contains("11pt") && f.contains("normal"));
     }
 
     #[test]
