@@ -3,7 +3,9 @@
 //! Openbox window themes (OB-*, openbox-3 directory), so "apply" writes, as
 //! on Openbox, the window theme, title bar buttons and fonts of the theme into
 //! rc.xml, with the rounded corners and shadows of its picom settings
-//! (cornerRadius, dropShadows, shadows of themerc-override). Also: the
+//! (cornerRadius, dropShadows, shadows of themerc-override), and the menus
+//! (lighter background, rounded corners and shadow of labwc-packarch, in
+//! themerc-override). Also: the
 //! wallpaper (swaybg), the bar of the theme (waybar: config and style.css of
 //! themes/ID/waybar, colors and font in colors.css), the colors of rofi, mako, kitty and hyprlock,
 //! the GTK, icon and cursor themes (GSettings and packarch-theme, read again
@@ -11,7 +13,7 @@
 //! relaunches swaybg, waybar and mako (scripts/startup).
 
 use crate::apply::{edit_file, icon_theme_for, kitty_colors, write_file, write_gtk, Colors, Target};
-use crate::color::Color;
+use crate::color::{Color, Rgb};
 use crate::edit::{set_block, set_line, set_xml_text, truncate_at};
 use crate::theme::{Dunst, Entry, Theme};
 use crate::{run, spawn, Dirs};
@@ -64,6 +66,46 @@ fn shadow_lines(theme: &Theme, c: &Colors) -> String {
         t += &format!("window.{state}.shadow.size: {}\nwindow.{state}.shadow.color: {color}\n", pc.shadow_radius);
     }
     t.trim_end().to_string()
+}
+
+/// Menus of themerc-override (labwc-packarch: menu.corner.radius and
+/// menu.shadow.*): background a little lighter than the windows (darker on
+/// a light theme), so that menus stand out from them, rounded corners of
+/// the windows, shadow a bit larger and darker than theirs. The background
+/// is the menu.items.bg.color of the Openbox window theme.
+fn menu_lines(theme: &Theme, c: &Colors) -> String {
+    let mut t = String::new();
+    let themerc = Path::new("/usr/share/themes").join(&theme.openbox.theme).join("openbox-3/themerc");
+    let bg = std::fs::read_to_string(&themerc).ok().and_then(|rc| {
+        rc.lines()
+            .find_map(|l| l.strip_prefix("menu.items.bg.color:"))
+            .and_then(|v| Rgb::parse(v.trim()))
+    });
+    if let Some(bg) = bg {
+        let menu = menu_background(bg).hex();
+        t += &format!("menu.items.bg.color: {menu}\nmenu.border.color: {menu}\n");
+    }
+    t += &format!("menu.corner.radius: {}\n", theme.picom.corner_radius);
+    let opacity = shadow_opacity(theme);
+    if theme.picom.shadow_radius > 0 && opacity > 0.0 {
+        let alpha = (opacity * 1.55).min(0.93);
+        t += &format!(
+            "menu.shadow.size: {}\nmenu.shadow.color: {}{:02x}\n",
+            theme.picom.shadow_radius + 4,
+            c.shadow.rgb.hex(),
+            (alpha * 255.0).round() as u8
+        );
+    } else {
+        t += "menu.shadow.size: 0\n";
+    }
+    t.trim_end().to_string()
+}
+
+/// Background of the menus: the one of the theme, 5 % lighter in HSL (darker
+/// on a light theme)
+fn menu_background(bg: Rgb) -> Rgb {
+    let light = (bg.r.max(bg.g).max(bg.b) + bg.r.min(bg.g).min(bg.b)) / 2.0 > 0.5;
+    bg.lighten(if light { -0.05 } else { 0.05 })
 }
 
 fn shadow_opacity(theme: &Theme) -> f64 {
@@ -204,7 +246,8 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
         }
     });
     edit_file(&labwc.join("themerc-override"), |t| {
-        set_block(t, OVERRIDE_START, OVERRIDE_END, &shadow_lines(theme, c));
+        let lines = format!("{}\n{}", shadow_lines(theme, c), menu_lines(theme, c));
+        set_block(t, OVERRIDE_START, OVERRIDE_END, &lines);
     });
 
     // Cursor of labwc (read again by labwc --reconfigure)
@@ -315,8 +358,21 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
 
 #[cfg(test)]
 mod tests {
-    use super::{bar_font, rgba, shell_quote, titlebar_layout};
+    use super::{bar_font, menu_background, rgba, shell_quote, titlebar_layout};
     use crate::color::{Color, Rgb};
+
+    #[test]
+    fn menu_background_lighter_on_dark() {
+        // Packarch theme: #20262C -> close to #2C333B (tried on the desktop)
+        let m = menu_background(Rgb::parse("#20262C").unwrap());
+        let target = Rgb::parse("#2C333B").unwrap();
+        for (a, b) in [(m.r, target.r), (m.g, target.g), (m.b, target.b)] {
+            assert!((a - b).abs() < 3.0 / 255.0, "{} instead of #2C333B", m.hex());
+        }
+        // Light theme: darker
+        let l = menu_background(Rgb::parse("#fcfbfa").unwrap());
+        assert!(l.r < 0xfc as f64 / 255.0);
+    }
 
     #[test]
     fn rgba_hyprlock() {
