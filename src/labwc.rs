@@ -1,4 +1,6 @@
-//! labwc desktop (packarch-labwc-settings): the same themes, copies of the
+//! labwc desktop (packarch-labwc-settings), and the Packarch desktop
+//! (packarch-rwdesktop-settings: same files in ~/.config/packarch, reloaded
+//! by packarch --reconfigure): the same themes, copies of the
 //! theme.toml files in /etc/skel/.config/labwc/themes. labwc reads the
 //! Openbox window themes (OB-*, openbox-3 directory), so "apply" writes, as
 //! on Openbox, the window theme, title bar buttons and fonts of the theme into
@@ -190,7 +192,8 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     }
     let wallpaper = entry.dir.join(&theme.wallpaper);
     let wallpaper = wallpaper.to_string_lossy();
-    let labwc = dirs.config.join("labwc");
+    // ~/.config/labwc, or ~/.config/packarch (Packarch desktop)
+    let labwc = dirs.config.join(dirs.desktop.dir());
     let a = &theme.appearance;
     let f = &theme.fonts;
     let icons = icon_theme_for(a, target);
@@ -315,10 +318,12 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     write_gtk(dirs, id, a, &icons, target);
 
     if session {
-        // labwc reads rc.xml, themerc-override and environment again
-        // (LABWC_PID: inherited from the session)
-        if !run("labwc", &["--reconfigure"]) {
-            run("pkill", &["-HUP", "-x", "labwc"]);
+        // labwc (or packarch) reads rc.xml, themerc-override and
+        // environment again (LABWC_PID or PACKARCH_PID: inherited from the
+        // session)
+        let compositor = if dirs.desktop == crate::Desktop::Packarch { "packarch" } else { "labwc" };
+        if !run(compositor, &["--reconfigure"]) {
+            run("pkill", &["-HUP", "-x", compositor]);
         }
         run("gsettings", &["set", "org.gnome.desktop.interface", "font-name", &f.gtk]);
         // swaybg, waybar and mako relaunched with the new wallpaper and colors

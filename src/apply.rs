@@ -379,7 +379,7 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
         // labwc: no xfsettingsd, GTK reads GSettings (the autostart of labwc
         // sets them again at each start from packarch-theme, also for the
         // package)
-        Target::Session if dirs.desktop == Desktop::Labwc => {
+        Target::Session if dirs.desktop.is_wayland() => {
             let gs = |key: &str, value: &str| {
                 run("gsettings", &["set", "org.gnome.desktop.interface", key, value]);
             };
@@ -389,7 +389,7 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
             gs("color-scheme", &scheme);
             run("gsettings", &["set", "org.x.apps.portal", "color-scheme", &scheme]);
         }
-        Target::Package(_) if dirs.desktop == Desktop::Labwc => {}
+        Target::Package(_) if dirs.desktop.is_wayland() => {}
         Target::Session => {
             xfconf("xsettings", "/Net/ThemeName", &a.gtk_theme);
             xfconf("xsettings", "/Net/IconThemeName", icons);
@@ -408,7 +408,9 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
             // packarch-xfce-settings, with the themes (used by GTK
             // applications started without xfsettingsd)
             let (name, what, themes) = match dirs.desktop {
-                Desktop::Openbox | Desktop::Labwc => ("25_packarch-openbox", "Color scheme", String::new()),
+                Desktop::Openbox | Desktop::Labwc | Desktop::Packarch => {
+                    ("25_packarch-openbox", "Color scheme", String::new())
+                }
                 Desktop::Xfce => (
                     "25_packarch-xfce-settings",
                     "Themes and color scheme",
@@ -467,7 +469,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     write_file(&dirs.state, &format!("{id}\n"));
     match dirs.desktop {
         Desktop::Xfce => return apply_xfce(dirs, entry, &theme, &c, target),
-        Desktop::Labwc => return crate::labwc::apply(dirs, entry, &theme, &c, target),
+        Desktop::Labwc | Desktop::Packarch => return crate::labwc::apply(dirs, entry, &theme, &c, target),
         Desktop::Openbox => {}
     }
 
