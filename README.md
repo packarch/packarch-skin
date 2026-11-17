@@ -120,11 +120,10 @@ the title bar buttons (`layout` of `[openbox]`, converted: `DLIMC` gives
 `desk:iconify,max,close`) and the fonts (`openbox`, `openbox_size`) into
 `~/.config/labwc/rc.xml`, with the rounded corners (`cornerRadius`: `corner_radius` of
 `[picom]`) and shadows (`dropShadows`, and their size and color in `themerc-override`:
-`shadow_radius`, `shadow_color`, `shadow_opacity`), and the menus in `themerc-override`:
-background 5 % lighter than the `menu.items.bg.color` of the window theme (darker on a
-light theme) so that they stand out from the windows, and for `labwc-packarch` (labwc
-with rounded and shadowed menus) `menu.corner.radius` (`corner_radius`) and
-`menu.shadow.*` (`shadow_radius` + 4, darker than the windows). Also: the wallpaper
+`shadow_radius`, `shadow_color`, `shadow_opacity`), and the menus in `themerc-override`
+for `labwc-packarch` (labwc with rounded and shadowed menus): `menu.corner.radius`
+(`corner_radius`) and `menu.shadow.*` (`shadow_radius` + 4, darker than the windows),
+so that they stand out from the windows (colors of the window theme). Also: the wallpaper
 (`~/.config/labwc/wallpaper`, shown by swaybg), the cursor (`XCURSOR_THEME` of
 `environment`), the GTK, icon and cursor themes (gsettings, and `packarch-theme`, read
 again at each start of labwc and by the root applications), the bar of the theme (as its
