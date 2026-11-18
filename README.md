@@ -3,7 +3,7 @@
   <p><strong>Theme chooser of the Packarch Openbox, XFCE and Packarch (packarch compositor) desktops, written in Rust</strong></p>
 </div>
 
-Packarch Skin applies the themes of [Packarch](https://github.com/packarch/CachyOS-Packarch).
+Packarch Skin applies the themes of [Packarch](https://github.com/packarch/Packarch).
 Each theme is described by a `theme.toml` file (colors, fonts, GTK, xfwm4, icon and cursor
 themes, folder color, wallpaper, Openbox, dunst and picom settings).
 
