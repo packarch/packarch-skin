@@ -1,16 +1,15 @@
-//! packarch-skin — theme (skin) chooser of the Packarch Openbox, XFCE and
-//! labwc desktops, and the Packarch desktop (packarch compositor, same files
-//! as labwc in ~/.config/packarch).
+//! packarch-skin — theme (skin) chooser of the Packarch Openbox and XFCE
+//! desktops, and the Packarch desktop (packarch compositor, ~/.config/packarch).
 //!
 //! On each desktop, the themes are the directories of
-//! ~/.config/<desktop>/themes (openbox, xfce4, labwc) that hold a theme.toml
+//! ~/.config/<desktop>/themes (openbox, xfce4, packarch) that hold a theme.toml
 //! (colors, fonts, GTK/icon/cursor themes, Openbox, dunst, picom
 //! settings...): the user changes a theme there, without root. The themes of
 //! the system that the user does not have are copied there by every command
 //! (all of them the first time); a theme of the user is never replaced.
 //! Themes of the system: the same directories in /etc/skel (new accounts
 //! get them from there), from packarch-openbox-settings (with their polybar/
-//! and rofi/ layouts), packarch-xfce-settings and packarch-labwc-settings
+//! and rofi/ layouts), packarch-xfce-settings and packarch-desktop-settings
 //! (copies of the same theme.toml files).
 //!
 //! Openbox: applying a theme writes its settings into the configuration of
@@ -22,11 +21,11 @@
 //! wallpaper, GTK, xfwm4, icon and cursor themes, the colors of
 //! xfce4-terminal and the theme button of the panel.
 //!
-//! labwc (XDG_CURRENT_DESKTOP, or the labwc configuration of
-//! packarch-labwc-settings without Openbox themes): "apply" sets the
+//! Packarch (XDG_CURRENT_DESKTOP, or the configuration of
+//! packarch-desktop-settings without Openbox themes): "apply" sets the
 //! wallpaper, the Openbox window theme, buttons, fonts, rounded corners and
-//! shadows of labwc, the colors of waybar, rofi, mako, kitty and hyprlock and
-//! the GTK, icon and cursor themes (labwc.rs).
+//! shadows of packarch, the colors of waybar, rofi, mako, kitty and hyprlock
+//! and the GTK, icon and cursor themes (packarch.rs).
 //!
 //! "render" writes the default theme into the /etc/skel of these packages
 //! when they are built, so that the first session starts with it.
@@ -36,7 +35,7 @@ mod bar;
 mod color;
 mod edit;
 mod fonts;
-mod labwc;
+mod packarch;
 mod theme;
 mod xfce;
 
@@ -54,7 +53,7 @@ Usage : packarch-skin COMMANDE
   render RACINE [THÈME]   écrit THÈME (par défaut « default ») dans les
                           fichiers de RACINE/etc/skel, sans rien lancer
                           (construction des paquets packarch-openbox-settings,
-                          packarch-xfce-settings et packarch-labwc-settings)
+                          packarch-xfce-settings et packarch-desktop-settings)
   bar                     relance la barre du thème courant (Openbox)
   font [CIBLE]            police de chaque programme, ou de CIBLE (polybar,
                           rofi, terminal, geany, gtk, openbox, dunst)
@@ -65,53 +64,47 @@ Usage : packarch-skin COMMANDE
   edit [THÈME]            ouvre le theme.toml de THÈME (par défaut le thème
                           courant) dans l'éditeur
   check [THÈME...]        vérifie les fichiers theme.toml
-  openbox-menu            menu Openbox (pipemenu) des thèmes (Openbox, labwc, Packarch)
+  openbox-menu            menu Openbox (pipemenu) des thèmes (Openbox, Packarch)
   chooser                 fenêtre de choix du thème (yad), avec « Couleur
                           des dossiers »
   panel                   remet le bouton des thèmes dans le tableau de
                           bord XFCE, ou le met à jour (XFCE)
 
 Thèmes : ~/.config/openbox/themes, ~/.config/xfce4/themes ou
-~/.config/labwc/themes ou ~/.config/packarch/themes selon le bureau, modifiables ; les thèmes du système
+~/.config/packarch/themes selon le bureau, modifiables ; les thèmes du système
 absents y sont copiés, un thème déjà présent n'est jamais remplacé.
 Bureau XFCE : sans les commandes bar, font et openbox-menu.
-Bureaux labwc et Packarch : sans les commandes bar, font et panel.";
+Bureau Packarch : sans les commandes bar, font et panel.";
 
 /// Skeleton of the new accounts, under the root: the themes of the system are
 /// in its .config/<desktop>/themes (packarch-openbox-settings,
-/// packarch-xfce-settings, packarch-labwc-settings)
+/// packarch-xfce-settings, packarch-desktop-settings)
 pub const SKEL: &str = "etc/skel";
 
-/// Themes of the labwc desktop (packarch-labwc-settings), under the root
-pub const LABWC_THEMES: &str = "etc/skel/.config/labwc/themes";
-
-/// Themes of the Packarch desktop (packarch-rwdesktop-settings: the packarch
-/// compositor with the configuration of the labwc desktop), under the root
+/// Themes of the Packarch desktop (packarch-desktop-settings: the packarch
+/// compositor), under the root
 pub const PACKARCH_THEMES: &str = "etc/skel/.config/packarch/themes";
 
 /// Themes of the system of packarch-xfce-settings before 1.0.9-15, under the
 /// root: used when /etc/skel has none (package not updated yet)
 const XFCE_THEMES_OLD: &str = "usr/share/xfcethemes/themes";
 
-/// Thumbnails of the themes (<id>.png) of XFCE and labwc, under the root
+/// Thumbnails of the themes (<id>.png) of XFCE and Packarch, under the root
 const XFCE_THUMBS: &str = "usr/share/xfcethemes/icons";
-const LABWC_THUMBS: &str = "usr/share/packarch/labwc/icons";
-const PACKARCH_THUMBS: &str = "usr/share/packarch/rwdesktop/icons";
+const PACKARCH_THUMBS: &str = "usr/share/packarch/desktop/icons";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Desktop {
     Openbox,
     Xfce,
-    Labwc,
-    /// The packarch compositor (packarch-rwdesktop): same configuration as
-    /// labwc, in ~/.config/packarch
+    /// The packarch compositor (packarch-desktop), in ~/.config/packarch
     Packarch,
 }
 
 impl Desktop {
-    /// labwc or Packarch: same files and tools (waybar, rofi, mako…)
+    /// Packarch: Wayland tools (waybar, rofi, mako…)
     pub fn is_wayland(self) -> bool {
-        matches!(self, Desktop::Labwc | Desktop::Packarch)
+        matches!(self, Desktop::Packarch)
     }
 
     /// Directory of the configuration in ~/.config
@@ -119,7 +112,6 @@ impl Desktop {
         match self {
             Desktop::Openbox => "openbox",
             Desktop::Xfce => "xfce4",
-            Desktop::Labwc => "labwc",
             Desktop::Packarch => "packarch",
         }
     }
@@ -153,7 +145,7 @@ pub struct Dirs {
     pub home: PathBuf,
     pub config: PathBuf,
     /// Themes that are applied: ~/.config/<desktop>/themes (openbox, xfce4,
-    /// labwc) in the session; the themes of the package for render
+    /// packarch) in the session; the themes of the package for render
     pub themes: PathBuf,
     /// Themes of the system, copied into THEMES when they are missing there
     /// (session only)
@@ -177,16 +169,12 @@ impl Dirs {
         let root = Path::new("/");
         let desktop = if is("packarch") {
             Desktop::Packarch
-        } else if is("labwc") {
-            Desktop::Labwc
         } else if is("xfce") {
             Desktop::Xfce
         } else if config.join("openbox/themes").is_dir() {
             Desktop::Openbox
         } else if is_packarch(&config, root) {
             Desktop::Packarch
-        } else if is_labwc(&config, root) {
-            Desktop::Labwc
         } else {
             Desktop::Xfce
         };
@@ -196,11 +184,10 @@ impl Dirs {
         let var = match desktop {
             Desktop::Openbox => None,
             Desktop::Xfce => Some("PACKARCH_SKIN_XFCE_THEMES"),
-            Desktop::Labwc => Some("PACKARCH_SKIN_LABWC_THEMES"),
             Desktop::Packarch => Some("PACKARCH_SKIN_PACKARCH_THEMES"),
         };
         let old = match desktop {
-            Desktop::Openbox | Desktop::Labwc | Desktop::Packarch => None,
+            Desktop::Openbox | Desktop::Packarch => None,
             Desktop::Xfce => Some(root.join(XFCE_THEMES_OLD)),
         };
         let system = var.and_then(env::var_os).map(PathBuf::from).unwrap_or_else(|| {
@@ -216,7 +203,7 @@ impl Dirs {
 
     /// Directories of the package root ROOT (render: home ROOT/etc/skel,
     /// whose themes are the themes of the package): Openbox when it has the
-    /// Openbox themes, else labwc when it has the labwc themes and
+    /// Openbox themes, else Packarch when it has the Packarch themes and
     /// configuration, else XFCE when it has the XFCE themes
     fn at(root: &Path) -> Dirs {
         let home = root.join(SKEL);
@@ -225,8 +212,6 @@ impl Dirs {
             Desktop::Openbox
         } else if is_packarch(&config, root) {
             Desktop::Packarch
-        } else if is_labwc(&config, root) {
-            Desktop::Labwc
         } else if Desktop::Xfce.themes_in(&config).is_dir() {
             Desktop::Xfce
         } else {
@@ -239,7 +224,6 @@ impl Dirs {
     fn with(home: PathBuf, config: PathBuf, root: &Path, desktop: Desktop) -> Dirs {
         let themes = desktop.themes_in(&config);
         let (state, thumbs) = match desktop {
-            Desktop::Labwc => (config.join("labwc/.current_theme"), root.join(LABWC_THUMBS)),
             Desktop::Packarch => (config.join("packarch/.current_theme"), root.join(PACKARCH_THUMBS)),
             // The current theme: file of the former theme switcher of XFCE
             // (read by init-backdrop.sh of packarch-xfce-settings)
@@ -295,20 +279,13 @@ impl Dirs {
     }
 }
 
-/// The configuration of packarch-rwdesktop-settings
+/// The configuration of packarch-desktop-settings
 /// (CONFIG/packarch/packarch-theme) and its themes under ROOT
 /// (~/.config/packarch also holds the settings of packarch-hello and
 /// packarch-pi: packarch-theme tells the desktop apart)
 fn is_packarch(config: &Path, root: &Path) -> bool {
     config.join("packarch/packarch-theme").is_file()
         && (root.join(PACKARCH_THEMES).is_dir() || env::var_os("PACKARCH_SKIN_PACKARCH_THEMES").is_some())
-}
-
-/// The labwc configuration of packarch-labwc-settings
-/// (CONFIG/labwc/packarch-theme) and the labwc themes under ROOT
-fn is_labwc(config: &Path, root: &Path) -> bool {
-    config.join("labwc/packarch-theme").is_file()
-        && (root.join(LABWC_THEMES).is_dir() || env::var_os("PACKARCH_SKIN_LABWC_THEMES").is_some())
 }
 
 /// PACKARCH_SKIN_DRY=1: the external commands are printed, not run (tests)
@@ -496,9 +473,9 @@ fn main() {
         }
         Some("panel") => dirs.xfce_only("panel").and_then(|()| xfce::panel(&dirs)),
         Some("chooser") => xfce::chooser(&dirs),
-        // labwc reads the Openbox menus too (menu.xml of packarch-labwc-settings)
+        // packarch reads the Openbox menus too (menu.xml of packarch-desktop-settings)
         Some("openbox-menu") => match dirs.desktop {
-            Desktop::Xfce => Err("« openbox-menu » : bureaux Openbox, labwc et Packarch seulement".into()),
+            Desktop::Xfce => Err("« openbox-menu » : bureaux Openbox et Packarch seulement".into()),
             _ => Ok(openbox_menu(&dirs)),
         },
         Some("-h") | Some("--help") | Some("help") => {

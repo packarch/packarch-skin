@@ -2,7 +2,7 @@
 //! the running session or, at package build time, to the files of /etc/skel.
 //! On XFCE, only what this desktop has: wallpaper, GTK, xfwm4, icon and
 //! cursor themes, xfce4-terminal and Geany colors, theme button of the panel.
-//! On labwc: see labwc.rs.
+//! On Packarch: see packarch.rs.
 
 use crate::color::{Color, Palette};
 use crate::edit::{set_block, set_line, set_or_insert, set_xml_text, truncate_at};
@@ -67,7 +67,7 @@ pub(crate) struct Colors {
     pub(crate) term_sel_fg: Color,
     /// Lock screen: accent, text, field, check, fail
     pub(crate) lock: [Color; 5],
-    /// Shadows of picom and labwc
+    /// Shadows of picom and packarch
     pub(crate) shadow: Color,
 }
 
@@ -158,7 +158,7 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
     })
 }
 
-/// kitty/colors.conf (Openbox and labwc)
+/// kitty/colors.conf (Openbox and Packarch)
 pub(crate) fn kitty_colors(c: &Colors) -> String {
     let cursor = c.term_cursor.as_ref().unwrap_or(&c.term_fg);
     let mut t = format!(
@@ -376,7 +376,7 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
     let conf = &dirs.config;
     let scheme = format!("'{}'", a.color_scheme);
     match target {
-        // labwc: no xfsettingsd, GTK reads GSettings (the autostart of labwc
+        // Packarch: no xfsettingsd, GTK reads GSettings (the autostart of packarch
         // sets them again at each start from packarch-theme, also for the
         // package)
         Target::Session if dirs.desktop.is_wayland() => {
@@ -408,7 +408,7 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
             // packarch-xfce-settings, with the themes (used by GTK
             // applications started without xfsettingsd)
             let (name, what, themes) = match dirs.desktop {
-                Desktop::Openbox | Desktop::Labwc | Desktop::Packarch => {
+                Desktop::Openbox | Desktop::Packarch => {
                     ("25_packarch-openbox", "Color scheme", String::new())
                 }
                 Desktop::Xfce => (
@@ -469,7 +469,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     write_file(&dirs.state, &format!("{id}\n"));
     match dirs.desktop {
         Desktop::Xfce => return apply_xfce(dirs, entry, &theme, &c, target),
-        Desktop::Labwc | Desktop::Packarch => return crate::labwc::apply(dirs, entry, &theme, &c, target),
+        Desktop::Packarch => return crate::packarch::apply(dirs, entry, &theme, &c, target),
         Desktop::Openbox => {}
     }
 

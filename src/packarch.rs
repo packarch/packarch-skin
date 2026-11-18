@@ -1,16 +1,15 @@
-//! labwc desktop (packarch-labwc-settings), and the Packarch desktop
-//! (packarch-rwdesktop-settings: same files in ~/.config/packarch, reloaded
-//! by packarch --reconfigure): the same themes, copies of the
-//! theme.toml files in /etc/skel/.config/labwc/themes. labwc reads the
-//! Openbox window themes (OB-*, openbox-3 directory), so "apply" writes, as
-//! on Openbox, the window theme, title bar buttons and fonts of the theme into
-//! rc.xml, with the rounded corners and shadows of its picom settings
-//! (cornerRadius, dropShadows, shadows of themerc-override), and the menus
-//! (rounded corners and shadow of labwc-packarch, in themerc-override). Also: the
+//! Packarch desktop (packarch compositor, packarch-desktop-settings: files in
+//! ~/.config/packarch, reloaded by packarch --reconfigure): the themes are
+//! copies of the theme.toml files in /etc/skel/.config/packarch/themes.
+//! packarch reads the Openbox window themes (OB-*, openbox-3 directory), so
+//! "apply" writes, as on Openbox, the window theme, title bar buttons and
+//! fonts of the theme into rc.xml, with the rounded corners and shadows of its
+//! picom settings (cornerRadius, dropShadows, shadows of themerc-override),
+//! and the menus (rounded corners and shadow, in themerc-override). Also: the
 //! wallpaper (swaybg), the bar of the theme (waybar: config and style.css of
 //! themes/ID/waybar, colors and font in colors.css), the colors of rofi, mako, kitty and hyprlock,
 //! the GTK, icon and cursor themes (GSettings and packarch-theme, read again
-//! at each start of labwc) and the Geany colors, then reloads labwc and
+//! at each start of packarch) and the Geany colors, then reloads packarch and
 //! relaunches swaybg, waybar and mako (scripts/startup).
 
 use crate::apply::{edit_file, icon_theme_for, kitty_colors, write_file, write_gtk, Colors, Target};
@@ -33,7 +32,7 @@ fn rgba(c: &Color, alpha: f64) -> String {
     format!("rgba({}, {}, {}, {alpha:.2})", v(c.rgb.r), v(c.rgb.g), v(c.rgb.b))
 }
 
-/// Title bar layout of labwc ("desk:iconify,max,close") from the Openbox
+/// Title bar layout of rc.xml ("desk:iconify,max,close") from the Openbox
 /// titleLayout of the theme ("DLIMC"): the buttons before the label (L) on
 /// the left, the others on the right; N: window icon, D: all desktops, S:
 /// shade, I: iconify, M: maximize, C: close. Without a label, every button
@@ -69,7 +68,7 @@ fn shadow_lines(theme: &Theme, c: &Colors) -> String {
     t.trim_end().to_string()
 }
 
-/// Menus of themerc-override (labwc-packarch: menu.corner.radius and
+/// Menus of themerc-override (packarch: menu.corner.radius and
 /// menu.shadow.*): rounded corners of the windows, shadow a bit larger and
 /// darker than theirs, so that menus stand out from the windows. The colors
 /// are the ones of the Openbox window theme.
@@ -151,7 +150,9 @@ fn waybar_colors(c: &Colors, polybar_font: &str) -> String {
 
 /// waybar/config of the theme: its @NAME@ colors replaced
 fn waybar_config(text: &str, c: &Colors) -> String {
-    let mut t = text.to_string();
+    // Scripts of the bars written for labwc (themes copied into
+    // ~/.config/packarch/themes before packarch-desktop-settings 1.1)
+    let mut t = text.replace("~/.config/labwc/", "~/.config/packarch/");
     for (name, col) in bar_colors(c) {
         t = t.replace(&format!("@{name}@"), &col.text);
     }
@@ -183,7 +184,7 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Application of a theme to the labwc desktop
+/// Application of a theme to the Packarch desktop
 pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Target) -> Result<(), String> {
     let id = &entry.id;
     let session = matches!(target, Target::Session);
@@ -192,19 +193,19 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     }
     let wallpaper = entry.dir.join(&theme.wallpaper);
     let wallpaper = wallpaper.to_string_lossy();
-    // ~/.config/labwc, or ~/.config/packarch (Packarch desktop)
-    let labwc = dirs.config.join(dirs.desktop.dir());
+    // ~/.config/packarch
+    let cfg = dirs.config.join(dirs.desktop.dir());
     let a = &theme.appearance;
     let f = &theme.fonts;
     let icons = icon_theme_for(a, target);
 
     // Wallpaper of every output (swaybg, scripts/wallpaper)
-    write_file(&labwc.join("wallpaper"), &format!("{wallpaper}\n"));
+    write_file(&cfg.join("wallpaper"), &format!("{wallpaper}\n"));
 
     // Window theme, buttons, fonts, rounded corners and shadows
     let o = &theme.openbox;
     let shadows = theme.picom.shadow_radius > 0 && shadow_opacity(theme) > 0.0;
-    edit_file(&labwc.join("rc.xml"), |x| {
+    edit_file(&cfg.join("rc.xml"), |x| {
         let th = ("theme", None);
         set_xml_text(x, &[th, ("name", None)], &o.theme);
         set_xml_text(x, &[th, ("icon", None)], &icons);
@@ -228,20 +229,20 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
             set_xml_text(x, &[("margin", None), (side, None)], &v.to_string());
         }
     });
-    edit_file(&labwc.join("themerc-override"), |t| {
+    edit_file(&cfg.join("themerc-override"), |t| {
         let lines = format!("{}\n{}", shadow_lines(theme, c), menu_lines(theme, c));
         set_block(t, OVERRIDE_START, OVERRIDE_END, &lines);
     });
 
-    // Cursor of labwc (read again by labwc --reconfigure)
-    edit_file(&labwc.join("environment"), |t| {
+    // Cursor (read again by packarch --reconfigure)
+    edit_file(&cfg.join("environment"), |t| {
         set_line(t, "XCURSOR_THEME=", &format!("XCURSOR_THEME={}", a.cursor_theme));
     });
 
-    // GTK, icon and cursor themes, read by the autostart of labwc
+    // GTK, icon and cursor themes, read by the autostart of packarch
     // (gsettings) and by scripts/asroot (root applications)
     write_file(
-        &labwc.join("packarch-theme"),
+        &cfg.join("packarch-theme"),
         &format!(
             "# Thème courant ({id}), écrit par packarch-skin : relu par autostart\n\
              # (gsettings) et scripts/asroot\n\
@@ -255,21 +256,21 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     );
 
     // Bar of the theme (themes/ID/waybar, as its polybar on Openbox; a theme
-    // of ~/.config/labwc/themes without one: the bar of the system theme)
+    // of ~/.config/packarch/themes without one: the bar of the system theme)
     let bar_dirs = [Some(entry.dir.join("waybar")), dirs.system.as_ref().map(|s| s.join(id).join("waybar"))];
     if let Some(src) = bar_dirs.into_iter().flatten().find(|d| d.join("config").is_file()) {
         if let Ok(text) = std::fs::read_to_string(src.join("config")) {
-            write_file(&labwc.join("waybar/config"), &waybar_config(&text, c));
+            write_file(&cfg.join("waybar/config"), &waybar_config(&text, c));
         }
         if let Ok(text) = std::fs::read_to_string(src.join("style.css")) {
-            write_file(&labwc.join("waybar/style.css"), &text);
+            write_file(&cfg.join("waybar/style.css"), &text);
         }
     }
-    write_file(&labwc.join("waybar/colors.css"), &waybar_colors(c, &f.polybar));
+    write_file(&cfg.join("waybar/colors.css"), &waybar_colors(c, &f.polybar));
 
     let r = &c.rofi;
     write_file(
-        &labwc.join("rofi/shared/colors.rasi"),
+        &cfg.join("rofi/shared/colors.rasi"),
         &format!(
             "/* Couleurs du thème, écrites par packarch-skin */\n\n* {{\n    background:     {};\n    background-alt: {};\n    foreground:     {};\n    selected:       {};\n    active:         {};\n    urgent:         {};\n}}\n",
             r[0].text, r[1].text, r[2].text, r[3].text, r[4].text, r[5].text
@@ -277,17 +278,17 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     );
     let rofi_icons = if a.rofi_icons == a.icon_theme { &icons } else { &a.rofi_icons };
     for file in ["launcher.rasi", "runner.rasi"] {
-        edit_file(&labwc.join("rofi").join(file), |t| {
+        edit_file(&cfg.join("rofi").join(file), |t| {
             set_line(t, "icon-theme:", &format!("icon-theme:                 \"{rofi_icons}\";"));
         });
     }
 
-    edit_file(&labwc.join("mako/config"), |t| {
+    edit_file(&cfg.join("mako/config"), |t| {
         truncate_at(t, MAKO_MARK);
         t.push_str(&mako_colors(c, &theme.dunst));
     });
 
-    let kitty = labwc.join("kitty");
+    let kitty = cfg.join("kitty");
     if kitty.join("kitty.conf").is_file() {
         write_file(&kitty.join("colors.conf"), &kitty_colors(c));
     }
@@ -296,7 +297,7 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     let [accent, text, field, check, fail] = &c.lock;
     let field_alpha = theme.labwc.lock_ring_opacity.clamp(0.0, 1.0);
     let fg_hex = text.text.trim_start_matches('#');
-    edit_file(&labwc.join("hyprlock.conf"), |t| {
+    edit_file(&cfg.join("hyprlock.conf"), |t| {
         for (key, value) in [
             ("$wallpaper =", wallpaper.to_string()),
             ("$accent_color =", rgba(accent, 1.0)),
@@ -318,16 +319,14 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     write_gtk(dirs, id, a, &icons, target);
 
     if session {
-        // labwc (or packarch) reads rc.xml, themerc-override and
-        // environment again (LABWC_PID or PACKARCH_PID: inherited from the
-        // session)
-        let compositor = if dirs.desktop == crate::Desktop::Packarch { "packarch" } else { "labwc" };
-        if !run(compositor, &["--reconfigure"]) {
-            run("pkill", &["-HUP", "-x", compositor]);
+        // packarch reads rc.xml, themerc-override and environment again
+        // (PACKARCH_PID: inherited from the session)
+        if !run("packarch", &["--reconfigure"]) {
+            run("pkill", &["-HUP", "-x", "packarch"]);
         }
         run("gsettings", &["set", "org.gnome.desktop.interface", "font-name", &f.gtk]);
         // swaybg, waybar and mako relaunched with the new wallpaper and colors
-        let startup = labwc.join("scripts/startup");
+        let startup = cfg.join("scripts/startup");
         spawn(&startup.to_string_lossy(), &[], &[]);
         run("pkill", &["-USR1", "-x", "kitty"]);
         // Once mako is back

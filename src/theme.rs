@@ -33,7 +33,8 @@ pub struct Theme {
     /// Settings of the XFCE desktop only
     #[serde(default)]
     pub xfce: Xfce,
-    /// Settings of the labwc desktop only
+    /// Settings of the Packarch desktop only ([labwc] in theme.toml: name kept
+    /// for the existing themes)
     #[serde(default)]
     pub labwc: Labwc,
 }
@@ -77,7 +78,7 @@ pub struct Roles {
     /// terminal_background, reversed)
     pub terminal_selection_background: Option<String>,
     pub terminal_selection_foreground: Option<String>,
-    /// Lock screen of labwc (hyprlock): accent (none: bar_accent), text
+    /// Lock screen of Packarch (hyprlock): accent (none: bar_accent), text
     /// (bar_foreground), password field (bar_alt_background, with the
     /// lock_ring_opacity of [labwc]), right and wrong password (color2,
     /// color1)
@@ -182,7 +183,7 @@ pub struct Dunst {
     pub border: u32,
     pub separator: u32,
     /// Seconds before the notifications close, by urgency (0: never), for
-    /// dunst and mako (labwc)
+    /// dunst and mako (Packarch)
     #[serde(default = "timeout_low")]
     pub timeout_low: u32,
     #[serde(default = "timeout_normal")]
@@ -211,7 +212,7 @@ pub struct Picom {
     pub blur_method: String,
     pub blur_strength: u32,
     /// Color of the shadows (color expression; none: black), with
-    /// shadow_opacity (picom shadow-color, shadows of labwc)
+    /// shadow_opacity (picom shadow-color, shadows of packarch)
     #[serde(default)]
     pub shadow_color: Option<String>,
 }
@@ -251,7 +252,7 @@ pub struct Xfce {
     pub xfwm4_theme: Option<String>,
 }
 
-/// labwc desktop: what the other desktops do not have
+/// Packarch desktop: what the other desktops do not have
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields, default)]
 pub struct Labwc {
