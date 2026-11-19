@@ -12,11 +12,14 @@
 //! at each start of packarch) and the Geany colors, then reloads packarch and
 //! relaunches swaybg, waybar and mako (scripts/startup).
 
-use crate::apply::{edit_file, icon_theme_for, kitty_colors, write_file, write_gtk, Colors, Target};
+use crate::apply::{
+    Colors, Target, edit_file, icon_theme_for, kitty_colors, reload_ghostty, write_file,
+    write_ghostty, write_gtk,
+};
 use crate::color::Color;
 use crate::edit::{set_block, set_line, set_xml_text, truncate_at};
 use crate::theme::{Dunst, Entry, Theme};
-use crate::{run, spawn, Dirs};
+use crate::{Dirs, run, spawn};
 use std::path::Path;
 
 /// Line of mako/config after which the colors are written
@@ -29,7 +32,12 @@ const OVERRIDE_END: &str = "# -- packarch-skin : fin --";
 /// "rgba(R, G, B, ALPHA)" (hyprlock)
 fn rgba(c: &Color, alpha: f64) -> String {
     let v = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!("rgba({}, {}, {}, {alpha:.2})", v(c.rgb.r), v(c.rgb.g), v(c.rgb.b))
+    format!(
+        "rgba({}, {}, {}, {alpha:.2})",
+        v(c.rgb.r),
+        v(c.rgb.g),
+        v(c.rgb.b)
+    )
 }
 
 /// Title bar layout of rc.xml ("desk:iconify,max,close") from the Openbox
@@ -60,10 +68,17 @@ pub fn titlebar_layout(openbox: &str) -> String {
 fn shadow_lines(theme: &Theme, c: &Colors) -> String {
     let pc = &theme.picom;
     let opacity = shadow_opacity(theme);
-    let color = format!("{}{:02x}", c.shadow.rgb.hex(), (opacity * 255.0).round() as u8);
+    let color = format!(
+        "{}{:02x}",
+        c.shadow.rgb.hex(),
+        (opacity * 255.0).round() as u8
+    );
     let mut t = String::new();
     for state in ["active", "inactive"] {
-        t += &format!("window.{state}.shadow.size: {}\nwindow.{state}.shadow.color: {color}\n", pc.shadow_radius);
+        t += &format!(
+            "window.{state}.shadow.size: {}\nwindow.{state}.shadow.color: {color}\n",
+            pc.shadow_radius
+        );
     }
     t.trim_end().to_string()
 }
@@ -90,7 +105,13 @@ fn menu_lines(theme: &Theme, c: &Colors) -> String {
 }
 
 fn shadow_opacity(theme: &Theme) -> f64 {
-    theme.picom.shadow_opacity.trim().parse::<f64>().unwrap_or(0.5).clamp(0.0, 1.0)
+    theme
+        .picom
+        .shadow_opacity
+        .trim()
+        .parse::<f64>()
+        .unwrap_or(0.5)
+        .clamp(0.0, 1.0)
 }
 
 /// Colors of the bar for waybar: name and color (style.css: @define-color
@@ -105,13 +126,25 @@ fn bar_colors(c: &Colors) -> Vec<(String, &Color)> {
         ("selected".into(), &c.bar_accent),
         ("accent".into(), &c.bar_accent),
     ];
-    let names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+    let names = [
+        "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+    ];
     for (i, col) in c.palette.iter().enumerate().take(16) {
         let name = names[i % 8];
-        v.push((if i < 8 { name.to_string() } else { format!("bright-{name}") }, col));
+        v.push((
+            if i < 8 {
+                name.to_string()
+            } else {
+                format!("bright-{name}")
+            },
+            col,
+        ));
     }
     for i in 1..=6 {
-        v.push((format!("gradient{i}"), c.gradient.get(i).unwrap_or(&c.bar_alt_bg)));
+        v.push((
+            format!("gradient{i}"),
+            c.gradient.get(i).unwrap_or(&c.bar_alt_bg),
+        ));
     }
     v
 }
@@ -122,12 +155,19 @@ fn bar_font(polybar: &str) -> String {
     let spec = polybar.split(';').next().unwrap_or("");
     let mut parts = spec.split(':');
     let family = parts.next().unwrap_or("").trim();
-    let family = if family.is_empty() { "JetBrains Mono" } else { family };
+    let family = if family.is_empty() {
+        "JetBrains Mono"
+    } else {
+        family
+    };
     let mut size = 10.0;
     let mut bold = false;
     for p in parts {
         let p = p.trim();
-        if let Some(v) = p.strip_prefix("size=").or_else(|| p.strip_prefix("pixelsize=")) {
+        if let Some(v) = p
+            .strip_prefix("size=")
+            .or_else(|| p.strip_prefix("pixelsize="))
+        {
             size = v.parse().unwrap_or(size);
         } else if p.to_ascii_lowercase().contains("bold") {
             bold = true;
@@ -185,11 +225,20 @@ fn shell_quote(value: &str) -> String {
 }
 
 /// Application of a theme to the Packarch desktop
-pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Target) -> Result<(), String> {
+pub fn apply(
+    dirs: &Dirs,
+    entry: &Entry,
+    theme: &Theme,
+    c: &Colors,
+    target: Target,
+) -> Result<(), String> {
     let id = &entry.id;
     let session = matches!(target, Target::Session);
     if !session && !Path::new(&theme.wallpaper).is_absolute() {
-        return Err(format!("{id} : le fond d'écran doit être un chemin absolu : {}", theme.wallpaper));
+        return Err(format!(
+            "{id} : le fond d'écran doit être un chemin absolu : {}",
+            theme.wallpaper
+        ));
     }
     let wallpaper = entry.dir.join(&theme.wallpaper);
     let wallpaper = wallpaper.to_string_lossy();
@@ -209,9 +258,21 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
         let th = ("theme", None);
         set_xml_text(x, &[th, ("name", None)], &o.theme);
         set_xml_text(x, &[th, ("icon", None)], &icons);
-        set_xml_text(x, &[th, ("titlebar", None), ("layout", None)], &titlebar_layout(&o.layout));
-        set_xml_text(x, &[th, ("cornerRadius", None)], &theme.picom.corner_radius.to_string());
-        set_xml_text(x, &[th, ("dropShadows", None)], if shadows { "yes" } else { "no" });
+        set_xml_text(
+            x,
+            &[th, ("titlebar", None), ("layout", None)],
+            &titlebar_layout(&o.layout),
+        );
+        set_xml_text(
+            x,
+            &[th, ("cornerRadius", None)],
+            &theme.picom.corner_radius.to_string(),
+        );
+        set_xml_text(
+            x,
+            &[th, ("dropShadows", None)],
+            if shadows { "yes" } else { "no" },
+        );
         for (place, weight) in [
             ("ActiveWindow", "bold"),
             ("InactiveWindow", "normal"),
@@ -236,7 +297,11 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
 
     // Cursor (read again by packarch --reconfigure)
     edit_file(&cfg.join("environment"), |t| {
-        set_line(t, "XCURSOR_THEME=", &format!("XCURSOR_THEME={}", a.cursor_theme));
+        set_line(
+            t,
+            "XCURSOR_THEME=",
+            &format!("XCURSOR_THEME={}", a.cursor_theme),
+        );
     });
 
     // GTK, icon and cursor themes, read by the autostart of packarch
@@ -257,8 +322,15 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
 
     // Bar of the theme (themes/ID/waybar, as its polybar on Openbox; a theme
     // of ~/.config/packarch/themes without one: the bar of the system theme)
-    let bar_dirs = [Some(entry.dir.join("waybar")), dirs.system.as_ref().map(|s| s.join(id).join("waybar"))];
-    if let Some(src) = bar_dirs.into_iter().flatten().find(|d| d.join("config").is_file()) {
+    let bar_dirs = [
+        Some(entry.dir.join("waybar")),
+        dirs.system.as_ref().map(|s| s.join(id).join("waybar")),
+    ];
+    if let Some(src) = bar_dirs
+        .into_iter()
+        .flatten()
+        .find(|d| d.join("config").is_file())
+    {
         if let Ok(text) = std::fs::read_to_string(src.join("config")) {
             write_file(&cfg.join("waybar/config"), &waybar_config(&text, c));
         }
@@ -266,7 +338,10 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
             write_file(&cfg.join("waybar/style.css"), &text);
         }
     }
-    write_file(&cfg.join("waybar/colors.css"), &waybar_colors(c, &f.polybar));
+    write_file(
+        &cfg.join("waybar/colors.css"),
+        &waybar_colors(c, &f.polybar),
+    );
 
     let r = &c.rofi;
     write_file(
@@ -276,10 +351,18 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
             r[0].text, r[1].text, r[2].text, r[3].text, r[4].text, r[5].text
         ),
     );
-    let rofi_icons = if a.rofi_icons == a.icon_theme { &icons } else { &a.rofi_icons };
+    let rofi_icons = if a.rofi_icons == a.icon_theme {
+        &icons
+    } else {
+        &a.rofi_icons
+    };
     for file in ["launcher.rasi", "runner.rasi"] {
         edit_file(&cfg.join("rofi").join(file), |t| {
-            set_line(t, "icon-theme:", &format!("icon-theme:                 \"{rofi_icons}\";"));
+            set_line(
+                t,
+                "icon-theme:",
+                &format!("icon-theme:                 \"{rofi_icons}\";"),
+            );
         });
     }
 
@@ -288,6 +371,11 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
         t.push_str(&mako_colors(c, &theme.dunst));
     });
 
+    // Terminal: Ghostty (~/.config/ghostty, shared with the Openbox
+    // desktop), and kitty for the accounts that still have its configuration
+    if session {
+        write_ghostty(&dirs.config, Some(c), f);
+    }
     let kitty = cfg.join("kitty");
     if kitty.join("kitty.conf").is_file() {
         write_file(&kitty.join("colors.conf"), &kitty_colors(c));
@@ -314,7 +402,11 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
     });
 
     edit_file(&dirs.config.join("geany/geany.conf"), |t| {
-        set_line(t, "color_scheme=", &format!("color_scheme={}", a.geany_colors));
+        set_line(
+            t,
+            "color_scheme=",
+            &format!("color_scheme={}", a.geany_colors),
+        );
     });
     write_gtk(dirs, id, a, &icons, target);
 
@@ -324,16 +416,25 @@ pub fn apply(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Targ
         if !run("packarch", &["--reconfigure"]) {
             run("pkill", &["-HUP", "-x", "packarch"]);
         }
-        run("gsettings", &["set", "org.gnome.desktop.interface", "font-name", &f.gtk]);
+        run(
+            "gsettings",
+            &["set", "org.gnome.desktop.interface", "font-name", &f.gtk],
+        );
         // swaybg, waybar and mako relaunched with the new wallpaper and colors
         let startup = cfg.join("scripts/startup");
         spawn(&startup.to_string_lossy(), &[], &[]);
+        reload_ghostty();
         run("pkill", &["-USR1", "-x", "kitty"]);
         // Once mako is back
         let msg = format!("Thème appliqué : {}", entry.display_name(Some(theme)));
         spawn(
             "sh",
-            &["-c", "sleep 1.5; notify-send -a Thèmes -i preferences-desktop-theme \"$1\"", "sh", &msg],
+            &[
+                "-c",
+                "sleep 1.5; notify-send -a Thèmes -i preferences-desktop-theme \"$1\"",
+                "sh",
+                &msg,
+            ],
             &[],
         );
     }
@@ -347,7 +448,10 @@ mod tests {
 
     #[test]
     fn rgba_hyprlock() {
-        let c = Color { text: "#E06B74".into(), rgb: Rgb::parse("#E06B74").unwrap() };
+        let c = Color {
+            text: "#E06B74".into(),
+            rgb: Rgb::parse("#E06B74").unwrap(),
+        };
         assert_eq!(rgba(&c, 1.0), "rgba(224, 107, 116, 1.00)");
         assert_eq!(rgba(&c, 0.5), "rgba(224, 107, 116, 0.50)");
     }

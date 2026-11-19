@@ -5,7 +5,7 @@
 
 use crate::apply::write_fonts;
 use crate::theme::Fonts;
-use crate::{bar, current, find, run, spawn, Dirs};
+use crate::{Dirs, bar, current, find, run, spawn};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::ErrorKind;
@@ -86,11 +86,18 @@ impl Global {
     /// STYLE may be empty) for PART
     pub fn set(&mut self, part: Part, family: &str, style: &str, size: &str) -> Result<(), String> {
         let (family, style, size) = (family.trim(), style.trim(), size.trim());
-        let n: f64 = size.parse().map_err(|_| format!("taille invalide : {size}"))?;
+        let n: f64 = size
+            .parse()
+            .map_err(|_| format!("taille invalide : {size}"))?;
         if family.is_empty() || !(n > 0.0) {
             return Err(format!("police invalide : « {family} {style} {size} »"));
         }
-        let pango = [family, style, size].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
+        let pango = [family, style, size]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" ");
         let whole = (n.round() as u32).max(1);
         match part {
             Part::Polybar => {
@@ -145,7 +152,11 @@ impl Part {
             .iter()
             .find(|(n, _)| *n == name)
             .map(|(_, p)| *p)
-            .ok_or_else(|| format!("cible inconnue : {name} (polybar, rofi, terminal, geany, gtk, openbox, dunst)"))
+            .ok_or_else(|| {
+                format!(
+                    "cible inconnue : {name} (polybar, rofi, terminal, geany, gtk, openbox, dunst)"
+                )
+            })
     }
 }
 
@@ -178,7 +189,12 @@ fn polybar_to_pango(value: &str) -> String {
             style = field;
         }
     }
-    [family, style, size].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ")
+    [family, style, size]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// packarch-skin font [CIBLE [FAMILLE STYLE TAILLE]]
@@ -203,10 +219,17 @@ pub fn command(dirs: &Dirs, args: &[String]) -> Result<(), String> {
             global.set(part, family, style, size)?;
             global.save(&path)?;
             let fonts = global.over(&entry.load()?.fonts);
-            write_fonts(dirs, &entry.dir, &fonts, crate::apply::Target::Session, Some(part));
+            write_fonts(
+                dirs,
+                &entry.dir,
+                &fonts,
+                crate::apply::Target::Session,
+                Some(part),
+            );
             match part {
                 Part::Polybar => bar::launch(dirs)?,
                 Part::Terminal => {
+                    crate::apply::reload_ghostty();
                     run("pkill", &["-USR1", "-x", "kitty"]);
                 }
                 Part::Openbox => {
@@ -251,8 +274,14 @@ mod tests {
         assert_eq!(describe(&f, Part::Polybar), "Iosevka 10");
         assert_eq!(describe(&f, Part::Terminal), "JetBrainsMono Nerd Font 10");
         assert_eq!(describe(&f, Part::Openbox), "Sans 12");
-        assert_eq!(polybar_to_pango("Iosevka:style=Bold:size=11;2"), "Iosevka Bold 11");
-        assert_eq!(polybar_to_pango("Iosevka:Medium:size=9;2"), "Iosevka Medium 9");
+        assert_eq!(
+            polybar_to_pango("Iosevka:style=Bold:size=11;2"),
+            "Iosevka Bold 11"
+        );
+        assert_eq!(
+            polybar_to_pango("Iosevka:Medium:size=9;2"),
+            "Iosevka Medium 9"
+        );
     }
 
     #[test]

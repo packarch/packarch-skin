@@ -2,8 +2,8 @@
 //! one item per theme and "Couleur des dossiers"), and the theme chooser
 //! window (yad), which works without the panel.
 
-use crate::apply::{self, write_file, xfconf, xfconf_get, Target};
-use crate::{current, dry, run, spawn, Dirs};
+use crate::apply::{self, Target, write_file, xfconf, xfconf_get};
+use crate::{Dirs, current, dry, run, spawn};
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -25,7 +25,10 @@ fn item(id: &str) -> String {
 /// Sets an xfconf property of type KIND, created if it does not exist
 pub fn xfconf_new(channel: &str, prop: &str, kind: &str, value: &str) {
     if dry() || xfconf_get(channel, prop).is_none() {
-        run("xfconf-query", &["-c", channel, "-p", prop, "-n", "-t", kind, "-s", value]);
+        run(
+            "xfconf-query",
+            &["-c", channel, "-p", prop, "-n", "-t", kind, "-s", value],
+        );
     } else {
         xfconf(channel, prop, value);
     }
@@ -36,8 +39,14 @@ fn xfconf_out(args: &[&str]) -> Option<String> {
     if dry() {
         return None;
     }
-    let out = Command::new("xfconf-query").args(args).stderr(Stdio::null()).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    let out = Command::new("xfconf-query")
+        .args(args)
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Values of an array property ("Value is an array with N items:" then one
@@ -89,7 +98,10 @@ fn monitors() -> Vec<String> {
 /// 4.20 (/backdrop/screen0/monitor<OUTPUT>/workspace<N>), created for each
 /// monitor and desktop (missing in a new session)
 pub fn wallpaper(image: &str) {
-    for prop in xfconf_out(&["-c", "xfce4-desktop", "-l"]).unwrap_or_default().lines() {
+    for prop in xfconf_out(&["-c", "xfce4-desktop", "-l"])
+        .unwrap_or_default()
+        .lines()
+    {
         if prop.ends_with("/image-path") || prop.ends_with("/last-image") {
             xfconf("xfce4-desktop", prop, image);
         }
@@ -100,7 +112,12 @@ pub fn wallpaper(image: &str) {
     for mon in monitors() {
         for ws in 0..count {
             let base = format!("/backdrop/screen0/monitor{mon}/workspace{ws}");
-            xfconf_new("xfce4-desktop", &format!("{base}/last-image"), "string", image);
+            xfconf_new(
+                "xfce4-desktop",
+                &format!("{base}/last-image"),
+                "string",
+                image,
+            );
             xfconf_new("xfce4-desktop", &format!("{base}/image-style"), "int", "5");
         }
     }
@@ -158,7 +175,8 @@ fn write_launcher(dirs: &Dirs, dir: &Path) {
     let files = launcher_files(dirs);
     for e in fs::read_dir(dir).into_iter().flatten().flatten() {
         let n = e.file_name().to_string_lossy().into_owned();
-        if n.starts_with("theme-") && n.ends_with(".desktop") && !files.iter().any(|(f, _)| *f == n) {
+        if n.starts_with("theme-") && n.ends_with(".desktop") && !files.iter().any(|(f, _)| *f == n)
+        {
             let _ = fs::remove_file(e.path());
         }
     }
@@ -179,7 +197,11 @@ fn theme_ids(dirs: &Dirs) -> Vec<String> {
 fn find_button() -> Option<u32> {
     let props = xfconf_out(&["-c", "xfce4-panel", "-l"]).unwrap_or_default();
     props.lines().find_map(|prop| {
-        let n = prop.strip_prefix("/plugins/plugin-")?.strip_suffix("/items")?.parse::<u32>().ok()?;
+        let n = prop
+            .strip_prefix("/plugins/plugin-")?
+            .strip_suffix("/items")?
+            .parse::<u32>()
+            .ok()?;
         xfconf_array("xfce4-panel", prop)
             .iter()
             .any(|i| i.starts_with("theme-") && i.ends_with(".desktop"))
@@ -192,7 +214,12 @@ fn sync_button(dirs: &Dirs, n: u32, current: &str) {
     write_launcher(dirs, &dirs.config.join(format!("xfce4/panel/launcher-{n}")));
     // The launcher does not move the clicked item first: "Couleur des
     // dossiers" stays last, packarch-skin puts the applied theme first
-    xfconf_new("xfce4-panel", &format!("/plugins/plugin-{n}/move-first"), "bool", "false");
+    xfconf_new(
+        "xfce4-panel",
+        &format!("/plugins/plugin-{n}/move-first"),
+        "bool",
+        "false",
+    );
     let prop = format!("/plugins/plugin-{n}/items");
     let new = items(&theme_ids(dirs), current);
     if xfconf_array("xfce4-panel", &prop) != new {
@@ -210,11 +237,18 @@ pub fn update_button(dirs: &Dirs, id: &str) {
 /// "render": launcher files and items of the theme button of the
 /// xfce4-panel.xml of /etc/skel (the launcher plugin whose items are themes)
 pub fn render_button(dirs: &Dirs, id: &str) -> Result<(), String> {
-    let xml = dirs.config.join("xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml");
-    let Ok(text) = fs::read_to_string(&xml) else { return Ok(()) };
+    let xml = dirs
+        .config
+        .join("xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml");
+    let Ok(text) = fs::read_to_string(&xml) else {
+        return Ok(());
+    };
     let lines: Vec<&str> = text.lines().collect();
     let Some(first) = lines.iter().position(|l| l.contains("value=\"theme-")) else {
-        return Err(format!("{} : pas de lanceur des thèmes (élément theme-*.desktop)", xml.display()));
+        return Err(format!(
+            "{} : pas de lanceur des thèmes (élément theme-*.desktop)",
+            xml.display()
+        ));
     };
     let start = (0..first)
         .rev()
@@ -230,7 +264,10 @@ pub fn render_button(dirs: &Dirs, id: &str) -> Result<(), String> {
     let end = (start..lines.len())
         .find(|&i| lines[i].trim() == "</property>")
         .ok_or("xfce4-panel.xml : fin de la liste « items » introuvable")?;
-    let indent: String = lines[first].chars().take_while(|c| c.is_whitespace()).collect();
+    let indent: String = lines[first]
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect();
     let mut out: Vec<String> = lines[..=start].iter().map(|l| l.to_string()).collect();
     for i in items(&theme_ids(dirs), id) {
         out.push(format!("{indent}<value type=\"string\" value=\"{i}\"/>"));
@@ -265,27 +302,48 @@ pub fn panel(dirs: &Dirs) -> Result<(), String> {
         .lines()
         .filter_map(|l| {
             let mut w = l.split_whitespace();
-            let n = w.next()?.strip_prefix("/plugins/plugin-")?.parse::<u32>().ok()?;
+            let n = w
+                .next()?
+                .strip_prefix("/plugins/plugin-")?
+                .parse::<u32>()
+                .ok()?;
             Some((n, w.next().unwrap_or("").to_string()))
         })
         .collect();
     let n = plugins.iter().map(|(n, _)| *n).max().unwrap_or(0) + 1;
-    let panel = xfconf_array("xfce4-panel", "/panels").into_iter().next().unwrap_or_else(|| "1".into());
+    let panel = xfconf_array("xfce4-panel", "/panels")
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| "1".into());
     let ids_prop = format!("/panels/panel-{panel}/plugin-ids");
     let mut ids = xfconf_array("xfce4-panel", &ids_prop);
-    let tasklist = plugins.iter().find(|(_, t)| t == "tasklist").map(|(n, _)| n.to_string());
+    let tasklist = plugins
+        .iter()
+        .find(|(_, t)| t == "tasklist")
+        .map(|(n, _)| n.to_string());
     match tasklist.and_then(|t| ids.iter().position(|i| *i == t)) {
         Some(pos) => ids.insert(pos, n.to_string()),
         None => ids.push(n.to_string()),
     }
-    xfconf_new("xfce4-panel", &format!("/plugins/plugin-{n}"), "string", "launcher");
+    xfconf_new(
+        "xfce4-panel",
+        &format!("/plugins/plugin-{n}"),
+        "string",
+        "launcher",
+    );
     sync_button(dirs, n, &cur);
     xfconf_set_array("xfce4-panel", &ids_prop, "int", &ids);
     // The panel only creates its plugins at startup
     spawn("xfce4-panel", &["-r"], &[]);
     run(
         "notify-send",
-        &["-a", "Thèmes", "-i", "preferences-desktop-theme", "Bouton des thèmes remis dans le tableau de bord"],
+        &[
+            "-a",
+            "Thèmes",
+            "-i",
+            "preferences-desktop-theme",
+            "Bouton des thèmes remis dans le tableau de bord",
+        ],
     );
     println!("Bouton des thèmes ajouté (greffon {n}, tableau de bord {panel})");
     Ok(())
@@ -300,7 +358,12 @@ fn chooser_lock() -> Option<Option<fs::File>> {
         .filter(|d| d.is_dir())
         .unwrap_or_else(std::env::temp_dir);
     // The lock cannot be taken (file not writable...): the chooser opens anyway
-    let Ok(file) = fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("packarch-skin-chooser.instance")) else {
+    let Ok(file) = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.join("packarch-skin-chooser.instance"))
+    else {
         return Some(None);
     };
     match file.try_lock() {
@@ -322,18 +385,36 @@ pub fn chooser(dirs: &Dirs) -> Result<(), String> {
     loop {
         let cur = current(dirs);
         let mut args: Vec<String> = [
-            "--list", "--title=Thèmes Packarch", "--window-icon=preferences-desktop-theme",
-            "--width=380", "--height=600", "--center", "--no-headers",
-            "--column=:IMG", "--column=Thème", "--column=id:HD",
-            "--print-column=3", "--separator=", "--button=Fermer:1", "--button=Appliquer:0",
+            "--list",
+            "--title=Thèmes Packarch",
+            "--window-icon=preferences-desktop-theme",
+            "--width=380",
+            "--height=600",
+            "--center",
+            "--no-headers",
+            "--column=:IMG",
+            "--column=Thème",
+            "--column=id:HD",
+            "--print-column=3",
+            "--separator=",
+            "--button=Fermer:1",
+            "--button=Appliquer:0",
         ]
         .iter()
         .map(|s| s.to_string())
         .collect();
-        args.extend(["folder".into(), "Couleur des dossiers".into(), "folder-color".into()]);
+        args.extend([
+            "folder".into(),
+            "Couleur des dossiers".into(),
+            "folder-color".into(),
+        ]);
         for e in dirs.list() {
             let name = e.display_name(e.load().ok().as_ref());
-            let icon = e.thumbnail(thumbs.as_deref()).map_or("preferences-desktop-theme".into(), |p| p.display().to_string());
+            let icon = e
+                .thumbnail(thumbs.as_deref())
+                .map_or("preferences-desktop-theme".into(), |p| {
+                    p.display().to_string()
+                });
             let mark = if e.id == cur { "  ✓" } else { "" };
             args.extend([icon, format!("{name}{mark}"), e.id]);
         }
@@ -360,7 +441,10 @@ pub fn chooser(dirs: &Dirs) -> Result<(), String> {
             .find(|e| e.id == choice)
             .ok_or_else(|| format!("thème inconnu : {choice}"))?;
         if let Err(e) = apply::apply(dirs, &entry, Target::Session) {
-            run("notify-send", &["-a", "Thèmes", "-u", "critical", &format!("Erreur : {e}")]);
+            run(
+                "notify-send",
+                &["-a", "Thèmes", "-u", "critical", &format!("Erreur : {e}")],
+            );
         }
     }
 }
@@ -371,15 +455,28 @@ mod tests {
 
     #[test]
     fn items_current_first_folder_color_last() {
-        let ids: Vec<String> = ["default", "hacking", "spark"].iter().map(|s| s.to_string()).collect();
+        let ids: Vec<String> = ["default", "hacking", "spark"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert_eq!(
             items(&ids, "spark"),
-            ["theme-spark.desktop", "theme-default.desktop", "theme-hacking.desktop", "folder-color.desktop"]
+            [
+                "theme-spark.desktop",
+                "theme-default.desktop",
+                "theme-hacking.desktop",
+                "folder-color.desktop"
+            ]
         );
         // Unknown current theme: the themes in order
         assert_eq!(
             items(&ids, "old"),
-            ["theme-default.desktop", "theme-hacking.desktop", "theme-spark.desktop", "folder-color.desktop"]
+            [
+                "theme-default.desktop",
+                "theme-hacking.desktop",
+                "theme-spark.desktop",
+                "folder-color.desktop"
+            ]
         );
     }
 }

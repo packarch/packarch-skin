@@ -57,9 +57,9 @@ Optional keys (default: the behavior of the themes without them):
 
 ```toml
 [roles]                                  # color expressions, like the other roles
-terminal_cursor = "accent"               # kitty: terminal_foreground; xfce4-terminal: bar_accent
-terminal_selection_background = "..."    # kitty: terminal_foreground
-terminal_selection_foreground = "..."    # kitty: terminal_background
+terminal_cursor = "accent"               # Ghostty, kitty: terminal_foreground; xfce4-terminal: bar_accent
+terminal_selection_background = "..."    # Ghostty, kitty: terminal_foreground
+terminal_selection_foreground = "..."    # Ghostty, kitty: terminal_background
 lock_accent = "..."                      # Packarch lock screen (hyprlock): bar_accent
 lock_text = "..."                        # bar_foreground
 lock_field = "..."                       # bar_alt_background
@@ -80,9 +80,9 @@ lock_ring_opacity = 0.5                  # password field of the lock screen
 
 ### Openbox
 
-`apply` writes the colors, fonts and settings of the theme into polybar, rofi, kitty, Geany,
+`apply` writes the colors, fonts and settings of the theme into polybar, rofi, Ghostty, Geany,
 GTK (xfconf and the GTK 2/3 files), Openbox (`rc.xml`), dunst, picom and fastfetch, sets the
-wallpaper with nitrogen and reloads Openbox, dunst, kitty and the bar. The fonts chosen with
+wallpaper with nitrogen and reloads Openbox, dunst, Ghostty and the bar. The fonts chosen with
 `font` (`~/.config/openbox/themes/fonts.toml`) replace those of every theme.
 
 ### XFCE
@@ -131,7 +131,7 @@ polybar on Openbox: `themes/<id>/waybar/config` and `style.css`, copied to
 `~/.config/packarch/waybar` with the `@color@` of the config replaced by the colors of the
 theme, and the scripts of `~/.config/labwc/` of older bars by those of `~/.config/packarch/`; colors, gradient and polybar font of the theme in `waybar/colors.css`; a theme of
 `~/.config/packarch/themes` without bar takes the one of the system theme), the colors of rofi,
-mako, kitty and hyprlock (all in `~/.config/packarch`) and of Geany. Then it runs
+mako and hyprlock (all in `~/.config/packarch`), of Ghostty and of Geany. Then it runs
 `packarch --reconfigure` and `~/.config/packarch/scripts/startup`, which relaunches swaybg,
 waybar and mako. `bar`, `font` and `panel` are refused; `openbox-menu` gives the themes
 menu of the packarch menu. The themes are in `~/.config/packarch/themes`, the current theme in
@@ -163,3 +163,13 @@ Packarch themes of the system (tests).
 
 GPL-3.0-or-later. The Openbox configuration and themes come from the work of Aditya Shakya
 (adi1090x), GPL3.
+
+## Terminal (Ghostty)
+
+On the Openbox and Packarch desktops, `apply` (in the session) writes the colors of the
+theme in `~/.config/ghostty/colors` and the terminal font in `~/.config/ghostty/fonts`,
+both included by `~/.config/ghostty/config` (copied from the one of packarch-system-settings
+in `/etc/skel` when the account has none), then sends `SIGUSR2` to Ghostty, which reloads its
+configuration in the open windows (any other signal ends Ghostty). `font terminal ...` writes
+the font the same way. kitty keeps its colors for the accounts that still have its
+configuration.

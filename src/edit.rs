@@ -47,7 +47,9 @@ pub fn set_or_insert(text: &mut String, key: &str, line: &str, after: &str) -> b
         found = true;
     }
     if !found {
-        let Some(i) = lines.iter().position(|l| starts(l, after)) else { return false };
+        let Some(i) = lines.iter().position(|l| starts(l, after)) else {
+            return false;
+        };
         lines.insert(i + 1, line.to_string());
     }
     *text = lines.join("\n");
@@ -58,8 +60,14 @@ pub fn set_or_insert(text: &mut String, key: &str, line: &str, after: &str) -> b
 /// with INNER. Returns false when the markers are missing.
 pub fn set_block(text: &mut String, start: &str, end: &str, inner: &str) -> bool {
     let lines: Vec<&str> = text.split('\n').collect();
-    let Some(s) = lines.iter().position(|l| l.trim() == start) else { return false };
-    let Some(e) = lines[s + 1..].iter().position(|l| l.trim() == end).map(|e| e + s + 1) else {
+    let Some(s) = lines.iter().position(|l| l.trim() == start) else {
+        return false;
+    };
+    let Some(e) = lines[s + 1..]
+        .iter()
+        .position(|l| l.trim() == end)
+        .map(|e| e + s + 1)
+    else {
         return false;
     };
     let mut out: Vec<String> = lines[..=s].iter().map(|l| l.to_string()).collect();
@@ -120,13 +128,25 @@ fn next_tag(xml: &str, mut pos: usize) -> Option<Tag> {
             .chars()
             .take_while(|c| !c.is_whitespace() && *c != '/' && *c != '>')
             .collect();
-        return Some(Tag { start, end, name, closing, empty });
+        return Some(Tag {
+            start,
+            end,
+            name,
+            closing,
+            empty,
+        });
     }
 }
 
 /// Content range (between the start and end tags) of the first child element
 /// of the range FROM..TO named NAME (with ATTR="VALUE" when given)
-fn child(xml: &str, from: usize, to: usize, name: &str, attr: Option<(&str, &str)>) -> Option<(usize, usize)> {
+fn child(
+    xml: &str,
+    from: usize,
+    to: usize,
+    name: &str,
+    attr: Option<(&str, &str)>,
+) -> Option<(usize, usize)> {
     let mut pos = from;
     let mut depth = 0usize;
     let mut found: Option<usize> = None;
@@ -173,7 +193,10 @@ pub fn set_xml_text(xml: &mut String, path: &[(&str, Option<(&str, &str)>)], val
     let mut pos = 0;
     while let Some(t) = next_tag(xml, pos) {
         if !t.closing && !t.empty {
-            range = (t.end, xml.rfind(&format!("</{}>", t.name)).unwrap_or(xml.len()));
+            range = (
+                t.end,
+                xml.rfind(&format!("</{}>", t.name)).unwrap_or(xml.len()),
+            );
             break;
         }
         pos = t.end;
@@ -184,7 +207,10 @@ pub fn set_xml_text(xml: &mut String, path: &[(&str, Option<(&str, &str)>)], val
             None => return false,
         }
     }
-    let escaped = value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let escaped = value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
     xml.replace_range(range.0..range.1, &escaped);
     true
 }
@@ -198,7 +224,10 @@ mod tests {
         let mut t = "width = 1\nframe_width = 2\n  height = 3\nline_height = 4".to_string();
         assert_eq!(set_line(&mut t, "width = ", "width = 10"), 1);
         assert_eq!(set_line(&mut t, "height = ", "height = 30"), 1);
-        assert_eq!(t, "width = 10\nframe_width = 2\n  height = 30\nline_height = 4");
+        assert_eq!(
+            t,
+            "width = 10\nframe_width = 2\n  height = 30\nline_height = 4"
+        );
         let mut t = "# blur-method =\nmethod = \"a\";".to_string();
         assert_eq!(set_line(&mut t, "method = ", "method = \"b\";"), 1);
         assert_eq!(t, "# blur-method =\nmethod = \"b\";");
@@ -212,20 +241,46 @@ mod tests {
         let line = "shadow-color = \"#112233\";";
         // Commented: kept, the setting is added
         let mut t = String::from("shadow-opacity = 0.6;\n# shadow-color = \"#000000\"\nb = 2;");
-        assert!(set_or_insert(&mut t, "shadow-color = ", line, "shadow-opacity = "));
-        assert_eq!(t, "shadow-opacity = 0.6;\nshadow-color = \"#112233\";\n# shadow-color = \"#000000\"\nb = 2;");
+        assert!(set_or_insert(
+            &mut t,
+            "shadow-color = ",
+            line,
+            "shadow-opacity = "
+        ));
+        assert_eq!(
+            t,
+            "shadow-opacity = 0.6;\nshadow-color = \"#112233\";\n# shadow-color = \"#000000\"\nb = 2;"
+        );
         // Then replaced
         let line2 = "shadow-color = \"#000000\";";
-        assert!(set_or_insert(&mut t, "shadow-color = ", line2, "shadow-opacity = "));
-        assert_eq!(t, "shadow-opacity = 0.6;\nshadow-color = \"#000000\";\n# shadow-color = \"#000000\"\nb = 2;");
+        assert!(set_or_insert(
+            &mut t,
+            "shadow-color = ",
+            line2,
+            "shadow-opacity = "
+        ));
+        assert_eq!(
+            t,
+            "shadow-opacity = 0.6;\nshadow-color = \"#000000\";\n# shadow-color = \"#000000\"\nb = 2;"
+        );
         let mut t = String::from("# shadow-opacity = 0.6;");
-        assert!(!set_or_insert(&mut t, "shadow-color = ", line, "shadow-opacity = "));
+        assert!(!set_or_insert(
+            &mut t,
+            "shadow-color = ",
+            line,
+            "shadow-opacity = "
+        ));
     }
 
     #[test]
     fn blocks() {
         let mut t = "a\n#-cr-start\ncorner-radius = 0;\n#-cr-end\nb".to_string();
-        assert!(set_block(&mut t, "#-cr-start", "#-cr-end", "corner-radius = 6;"));
+        assert!(set_block(
+            &mut t,
+            "#-cr-start",
+            "#-cr-end",
+            "corner-radius = 6;"
+        ));
         assert_eq!(t, "a\n#-cr-start\ncorner-radius = 6;\n#-cr-end\nb");
         let mut t = "x\n\n[urgency_low]\ny".to_string();
         truncate_at(&mut t, "urgency_low");
@@ -246,10 +301,30 @@ mod tests {
   <margins><top>0</top><bottom>0</bottom></margins>
 </openbox_config>"#
             .to_string();
-        assert!(set_xml_text(&mut x, &[("theme", None), ("name", None)], "OB-Arc"));
-        assert!(set_xml_text(&mut x, &[("theme", None), ("font", Some(("place", "MenuItem"))), ("size", None)], "10"));
-        assert!(set_xml_text(&mut x, &[("margins", None), ("bottom", None)], "12"));
-        assert!(!set_xml_text(&mut x, &[("menu", None), ("file", None)], "x"));
+        assert!(set_xml_text(
+            &mut x,
+            &[("theme", None), ("name", None)],
+            "OB-Arc"
+        ));
+        assert!(set_xml_text(
+            &mut x,
+            &[
+                ("theme", None),
+                ("font", Some(("place", "MenuItem"))),
+                ("size", None)
+            ],
+            "10"
+        ));
+        assert!(set_xml_text(
+            &mut x,
+            &[("margins", None), ("bottom", None)],
+            "12"
+        ));
+        assert!(!set_xml_text(
+            &mut x,
+            &[("menu", None), ("file", None)],
+            "x"
+        ));
         assert!(x.contains("<name>OB-Arc</name>"));
         assert!(x.contains(r#"<font place="MenuItem"><name>B</name><size>10</size></font>"#));
         assert!(x.contains(r#"<font place="ActiveWindow"><name>A</name><size>8</size></font>"#));

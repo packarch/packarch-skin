@@ -8,7 +8,7 @@
 //! "ethernet" for a wired connection).
 
 use crate::edit::set_line;
-use crate::{current, spawn, theme, Dirs};
+use crate::{Dirs, current, spawn, theme};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -61,7 +61,11 @@ fn first_entry(dir: &str, f: impl Fn(&str, &Path) -> bool) -> Option<String> {
 /// itself: the batteries of mice, keyboards... have the scope "Device"
 fn power_supply(kind: &str) -> Option<String> {
     first_entry("/sys/class/power_supply", |_, p| {
-        let read = |f: &str| fs::read_to_string(p.join(f)).map(|t| t.trim().to_string()).unwrap_or_default();
+        let read = |f: &str| {
+            fs::read_to_string(p.join(f))
+                .map(|t| t.trim().to_string())
+                .unwrap_or_default()
+        };
         read("type") == kind && read("scope") != "Device"
     })
 }
@@ -72,7 +76,10 @@ fn backlight() -> Option<String> {
 
 fn interface() -> Option<String> {
     first_entry("/sys/class/net", |n, p| {
-        n != "lo" && fs::read_to_string(p.join("operstate")).map(|s| s.trim() == "up").unwrap_or(false)
+        n != "lo"
+            && fs::read_to_string(p.join("operstate"))
+                .map(|s| s.trim() == "up")
+                .unwrap_or(false)
     })
 }
 
@@ -101,10 +108,17 @@ fn system_values(themes: &Path) {
 
 /// Renames the modules of the "modules-* = ..." line LINE (whole names)
 fn rename_modules(line: &str, rename: &[(&str, &str)]) -> String {
-    let Some((key, value)) = line.split_once('=') else { return line.to_string() };
+    let Some((key, value)) = line.split_once('=') else {
+        return line.to_string();
+    };
     let m: Vec<&str> = value
         .split_whitespace()
-        .map(|x| rename.iter().find(|(from, _)| *from == x).map_or(x, |(_, to)| *to))
+        .map(|x| {
+            rename
+                .iter()
+                .find(|(from, _)| *from == x)
+                .map_or(x, |(_, to)| *to)
+        })
         .collect();
     format!("{key}= {}", m.join(" ")).trim_end().to_string()
 }
@@ -117,7 +131,9 @@ const SEPARATORS: [&str; 5] = ["sep", "sep2", "dot", "dot-alt", "space"];
 /// when there is none before). The powerline transitions (2RD, 3LD...) stay:
 /// each one goes from the background of the previous module to the next.
 fn remove_modules(line: &str, remove: &[&str]) -> String {
-    let Some((key, value)) = line.split_once('=') else { return line.to_string() };
+    let Some((key, value)) = line.split_once('=') else {
+        return line.to_string();
+    };
     let mut m: Vec<&str> = value.split_whitespace().collect();
     while let Some(i) = m.iter().position(|x| remove.contains(x)) {
         let (mut a, mut b) = (i, i + 1);
@@ -180,11 +196,17 @@ fn fix_modules(pbar: &Path) {
 fn bar_monitors(list: &str) -> Vec<String> {
     let mons: Vec<(&str, bool)> = list
         .lines()
-        .filter_map(|l| l.split_once(':').map(|(m, rest)| (m.trim(), rest.contains("(primary)"))))
+        .filter_map(|l| {
+            l.split_once(':')
+                .map(|(m, rest)| (m.trim(), rest.contains("(primary)")))
+        })
         .filter(|(m, _)| !m.is_empty())
         .collect();
     let primary = mons.iter().any(|&(_, p)| p);
-    mons.into_iter().filter(|&(_, p)| p || !primary).map(|(m, _)| m.to_string()).collect()
+    mons.into_iter()
+        .filter(|&(_, p)| p || !primary)
+        .map(|(m, _)| m.to_string())
+        .collect()
 }
 
 fn monitors() -> Vec<String> {
@@ -209,7 +231,10 @@ pub fn launch(dirs: &Dirs) -> Result<(), String> {
     system_values(&dirs.themes);
     let pbar = entry.dir.join("polybar");
     fix_modules(&pbar);
-    let bars = entry.load().map(|t| t.polybar.bars).unwrap_or_else(|_| vec!["main".into()]);
+    let bars = entry
+        .load()
+        .map(|t| t.polybar.bars)
+        .unwrap_or_else(|_| vec!["main".into()]);
     stop("polybar");
     let config = pbar.join("config.ini").to_string_lossy().into_owned();
     for mon in monitors() {
@@ -238,37 +263,62 @@ mod tests {
         );
         // easy: battery last inside a LD/RD group
         assert_eq!(
-            remove_modules("modules-right = LD tray RD space LD volume dot backlight dot network dot battery RD space date", &NONE),
+            remove_modules(
+                "modules-right = LD tray RD space LD volume dot backlight dot network dot battery RD space date",
+                &NONE
+            ),
             "modules-right = LD tray RD space LD volume dot network RD space date"
         );
         // forest: first module, no separator
         assert_eq!(
-            remove_modules("modules-right = battery bluetooth network sep volume-bar backlight-bar tray", &NONE),
+            remove_modules(
+                "modules-right = battery bluetooth network sep volume-bar backlight-bar tray",
+                &NONE
+            ),
             "modules-right = bluetooth network sep volume-bar tray"
         );
         // hack: second bar
-        assert_eq!(remove_modules("modules-right = volume-bar sep backlight-bar", &NONE), "modules-right = volume-bar");
+        assert_eq!(
+            remove_modules("modules-right = volume-bar sep backlight-bar", &NONE),
+            "modules-right = volume-bar"
+        );
         // adaptive: the powerline transitions stay
         assert_eq!(
-            remove_modules("modules-right = 2RD volume 3RD backlight 4RD battery 5RD bluetooth", &NONE),
+            remove_modules(
+                "modules-right = 2RD volume 3RD backlight 4RD battery 5RD bluetooth",
+                &NONE
+            ),
             "modules-right = 2RD volume 3RD 4RD 5RD bluetooth"
         );
         // only the battery
         assert_eq!(
-            remove_modules("modules-right = volume sep backlight sep battery sep date", &["battery"]),
+            remove_modules(
+                "modules-right = volume sep backlight sep battery sep date",
+                &["battery"]
+            ),
             "modules-right = volume sep backlight sep date"
         );
     }
 
     #[test]
     fn modules_renamed() {
-        let rename = [("backlight", "brightness"), ("network", "ethernet"), ("network_ext", "ethernet_ext")];
+        let rename = [
+            ("backlight", "brightness"),
+            ("network", "ethernet"),
+            ("network_ext", "ethernet_ext"),
+        ];
         // whole names only: backlight-bar has no brightness counterpart
         assert_eq!(
-            rename_modules("modules-right = network sep volume-bar backlight-bar backlight", &rename),
+            rename_modules(
+                "modules-right = network sep volume-bar backlight-bar backlight",
+                &rename
+            ),
             "modules-right = ethernet sep volume-bar backlight-bar brightness"
         );
-        assert_eq!(rename_modules("modules-center = network_ext sep bluetooth", &rename), "modules-center = ethernet_ext sep bluetooth");
+        assert_eq!(
+            rename_modules("modules-center = network_ext sep bluetooth", &rename),
+            "modules-center = ethernet_ext sep bluetooth"
+        );
     }
 
     #[test]
@@ -279,7 +329,10 @@ mod tests {
             ["DP-1"]
         );
         // no primary monitor: all of them
-        assert_eq!(bar_monitors("DP-1: 1920x1080+1920+0\nHDMI-0: 1920x1080+0+0\n"), ["DP-1", "HDMI-0"]);
+        assert_eq!(
+            bar_monitors("DP-1: 1920x1080+1920+0\nHDMI-0: 1920x1080+0+0\n"),
+            ["DP-1", "HDMI-0"]
+        );
         // a single monitor
         assert_eq!(bar_monitors("eDP-1: 1920x1080+0+0 (primary)\n"), ["eDP-1"]);
         assert_eq!(bar_monitors("Virtual-1: 1600x900+0+0\n"), ["Virtual-1"]);

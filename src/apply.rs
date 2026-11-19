@@ -9,10 +9,10 @@ use crate::edit::{set_block, set_line, set_or_insert, set_xml_text, truncate_at}
 use crate::fonts::{self, Global, Part};
 use crate::theme::{Appearance, Entry, Fonts, Theme};
 use crate::xfce::{self, xfconf_new};
-use crate::{bar, dry, run, spawn, xml_escape, Desktop, Dirs};
+use crate::{Desktop, Dirs, bar, dry, run, spawn, xml_escape};
 use std::fs;
-use std::process::{Command, Stdio};
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 /// Where a theme is applied
 #[derive(Clone, Copy)]
@@ -39,9 +39,32 @@ const FASTFETCH_LOGO: &str = "\"type\": \"kitty\", \"source\": \"/usr/share/pixm
 /// Modules of fastfetch (its default list: a configuration file without
 /// "modules" shows none)
 const FASTFETCH_MODULES: [&str; 26] = [
-    "title", "separator", "os", "host", "kernel", "shell", "display", "de", "wm",
-    "wmtheme", "theme", "icons", "font", "cursor", "terminal", "terminalfont", "cpu", "gpu", "memory",
-    "swap", "disk", "localip", "battery", "poweradapter", "break", "colors",
+    "title",
+    "separator",
+    "os",
+    "host",
+    "kernel",
+    "shell",
+    "display",
+    "de",
+    "wm",
+    "wmtheme",
+    "theme",
+    "icons",
+    "font",
+    "cursor",
+    "terminal",
+    "terminalfont",
+    "cpu",
+    "gpu",
+    "memory",
+    "swap",
+    "disk",
+    "localip",
+    "battery",
+    "poweradapter",
+    "break",
+    "colors",
 ];
 
 /// Colors of the roles, resolved
@@ -79,8 +102,10 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
     }
     let mut defs = theme.colors.clone();
     // Defaults of the derived colors (as apply.sh computed them)
-    defs.entry("alt_background".into()).or_insert("lighten(background, 0.05)".into());
-    defs.entry("alt_foreground".into()).or_insert("darken(foreground, 0.30)".into());
+    defs.entry("alt_background".into())
+        .or_insert("lighten(background, 0.05)".into());
+    defs.entry("alt_foreground".into())
+        .or_insert("darken(foreground, 0.30)".into());
     let mut p = Palette::new(&defs);
     let r = &theme.roles;
 
@@ -91,7 +116,10 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
             .rgb
             .gradient(bar_alt_bg.rgb, 7)
             .into_iter()
-            .map(|rgb| Color { text: rgb.hex(), rgb })
+            .map(|rgb| Color {
+                text: rgb.hex(),
+                rgb,
+            })
             .collect();
     }
     let mut palette = Vec::with_capacity(16);
@@ -118,7 +146,11 @@ fn resolve(theme: &Theme) -> Result<Colors, String> {
     let term_sel_bg = opt(&mut p, &r.terminal_selection_background, &term_fg)?;
     let term_sel_fg = opt(&mut p, &r.terminal_selection_foreground, &term_bg)?;
     let shadow = opt(&mut p, &theme.picom.shadow_color, &black)?;
-    let term_cursor = r.terminal_cursor.as_deref().map(|e| p.eval(e)).transpose()?;
+    let term_cursor = r
+        .terminal_cursor
+        .as_deref()
+        .map(|e| p.eval(e))
+        .transpose()?;
     Ok(Colors {
         term_cursor,
         term_sel_bg,
@@ -166,9 +198,64 @@ pub(crate) fn kitty_colors(c: &Colors) -> String {
         c.term_bg.text, c.term_fg.text, c.term_sel_bg.text, c.term_sel_fg.text, cursor.text
     );
     for i in 0..8 {
-        t += &format!("color{i} {}\ncolor{} {}\n", c.palette[i].text, i + 8, c.palette[i + 8].text);
+        t += &format!(
+            "color{i} {}\ncolor{} {}\n",
+            c.palette[i].text,
+            i + 8,
+            c.palette[i + 8].text
+        );
     }
     t
+}
+
+/// Configuration of Ghostty for the new accounts (packarch-system-settings),
+/// shared by the desktops: it includes the files colors and fonts below
+const GHOSTTY_SKEL: &str = "/etc/skel/.config/ghostty/config";
+
+/// ghostty/colors (Openbox and Packarch)
+pub(crate) fn ghostty_colors(c: &Colors) -> String {
+    let cursor = c.term_cursor.as_ref().unwrap_or(&c.term_fg);
+    let mut t = format!(
+        "# Couleurs du thème, écrites par packarch-skin\nbackground = {}\nforeground = {}\nselection-background = {}\nselection-foreground = {}\ncursor-color = {}\n",
+        c.term_bg.text, c.term_fg.text, c.term_sel_bg.text, c.term_sel_fg.text, cursor.text
+    );
+    for (i, col) in c.palette.iter().enumerate().take(16) {
+        t += &format!("palette = {i}={}\n", col.text);
+    }
+    t
+}
+
+/// ghostty/fonts (Openbox and Packarch)
+pub(crate) fn ghostty_fonts(family: &str, size: u32) -> String {
+    format!(
+        "# Police du terminal, écrite par packarch-skin\nfont-family = {family}\nfont-size = {size}\n"
+    )
+}
+
+/// Session: ~/.config/ghostty/colors (COLORS) and fonts, included by
+/// ~/.config/ghostty/config, written first from /etc/skel when the account
+/// has none (accounts created before Ghostty)
+pub(crate) fn write_ghostty(conf: &Path, colors: Option<&Colors>, f: &Fonts) {
+    let dir = conf.join("ghostty");
+    let config = dir.join("config");
+    if !config.exists() && Path::new(GHOSTTY_SKEL).is_file() && fs::create_dir_all(&dir).is_ok() {
+        let _ = fs::copy(GHOSTTY_SKEL, &config);
+    }
+    if !config.is_file() {
+        return;
+    }
+    if let Some(c) = colors {
+        write_file(&dir.join("colors"), &ghostty_colors(c));
+    }
+    write_file(
+        &dir.join("fonts"),
+        &ghostty_fonts(&f.terminal, f.terminal_size),
+    );
+}
+
+/// Ghostty reloads its configuration on SIGUSR2 (any other signal ends it)
+pub(crate) fn reload_ghostty() {
+    run("pkill", &["-USR2", "-x", "ghostty"]);
 }
 
 /// [urgency_*] sections of dunstrc (colors and timeouts of the theme)
@@ -224,13 +311,24 @@ pub(crate) fn icon_theme_for(a: &Appearance, target: Target) -> String {
         println!("[dry] packarch-folder-color {}", args.join(" "));
         return keep;
     }
-    match Command::new("packarch-folder-color").args(&args).stderr(Stdio::null()).output() {
+    match Command::new("packarch-folder-color")
+        .args(&args)
+        .stderr(Stdio::null())
+        .output()
+    {
         Ok(o) if o.status.success() => {
             let id = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if a.folder_color.is_some() && !id.is_empty() { id } else { keep }
+            if a.folder_color.is_some() && !id.is_empty() {
+                id
+            } else {
+                keep
+            }
         }
         Ok(_) => {
-            eprintln!("packarch-skin : packarch-folder-color {} a échoué", args.join(" "));
+            eprintln!(
+                "packarch-skin : packarch-folder-color {} a échoué",
+                args.join(" ")
+            );
             keep
         }
         Err(_) => {
@@ -245,7 +343,9 @@ pub(crate) fn icon_theme_for(a: &Appearance, target: Target) -> String {
 /// Reads FILE, applies F, writes it back if it changed. A missing file is
 /// skipped (the user may have removed it).
 pub(crate) fn edit_file(file: &Path, f: impl FnOnce(&mut String)) {
-    let Ok(old) = fs::read_to_string(file) else { return };
+    let Ok(old) = fs::read_to_string(file) else {
+        return;
+    };
     let mut text = old.clone();
     f(&mut text);
     if text != old {
@@ -272,8 +372,13 @@ pub(crate) fn xfconf_get(channel: &str, prop: &str) -> Option<String> {
     if dry() {
         return None;
     }
-    let out = Command::new("xfconf-query").args(["-c", channel, "-p", prop]).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    let out = Command::new("xfconf-query")
+        .args(["-c", channel, "-p", prop])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// Writes the fonts F (of all the programs, or only of ONLY) into their
@@ -305,6 +410,9 @@ pub fn write_fonts(dirs: &Dirs, tdir: &Path, f: &Fonts, target: Target, only: Op
             );
             set_line(t, "font_size ", &format!("font_size {}", f.terminal_size));
         });
+        if matches!(target, Target::Session) {
+            write_ghostty(conf, None, f);
+        }
     }
     if want(Part::Geany) {
         edit_file(&conf.join("geany/geany.conf"), |t| {
@@ -324,9 +432,12 @@ pub fn write_fonts(dirs: &Dirs, tdir: &Path, f: &Fonts, target: Target, only: Op
                 }
             }
             Target::Package(_) => {
-                edit_file(&conf.join("xfce4/xfconf/xfce-perchannel-xml/xsettings.xml"), |t| {
-                    set_xfconf_file(t, "FontName", &f.gtk);
-                });
+                edit_file(
+                    &conf.join("xfce4/xfconf/xfce-perchannel-xml/xsettings.xml"),
+                    |t| {
+                        set_xfconf_file(t, "FontName", &f.gtk);
+                    },
+                );
             }
         }
         // Read by the GTK applications started without xfsettingsd
@@ -343,9 +454,20 @@ pub fn write_fonts(dirs: &Dirs, tdir: &Path, f: &Fonts, target: Target, only: Op
             // Menu items: feather first for the glyphs of menu-glyphs.xml (their
             // codepoints are also in other icon fonts, with other widths)
             let menu_font = format!("{},feather", f.openbox);
-            for (place, weight) in [("ActiveWindow", "Bold"), ("InactiveWindow", "Normal"), ("MenuHeader", "Bold"), ("MenuItem", "Normal"), ("ActiveOnScreenDisplay", "Bold"), ("InactiveOnScreenDisplay", "Normal")] {
+            for (place, weight) in [
+                ("ActiveWindow", "Bold"),
+                ("InactiveWindow", "Normal"),
+                ("MenuHeader", "Bold"),
+                ("MenuItem", "Normal"),
+                ("ActiveOnScreenDisplay", "Bold"),
+                ("InactiveOnScreenDisplay", "Normal"),
+            ] {
                 let font = ("font", Some(("place", place)));
-                let name = if place == "MenuItem" { &menu_font } else { &f.openbox };
+                let name = if place == "MenuItem" {
+                    &menu_font
+                } else {
+                    &f.openbox
+                };
                 set_xml_text(x, &[th, font, ("name", None)], name);
                 set_xml_text(x, &[th, font, ("size", None)], &f.openbox_size.to_string());
                 set_xml_text(x, &[th, font, ("weight", None)], weight);
@@ -366,7 +488,10 @@ fn set_xfconf_file(text: &mut String, name: &str, value: &str) {
     set_line(
         text,
         &format!("<property name=\"{name}\" "),
-        &format!("<property name=\"{name}\" type=\"string\" value=\"{}\"/>", xml_escape(value)),
+        &format!(
+            "<property name=\"{name}\" type=\"string\" value=\"{}\"/>",
+            xml_escape(value)
+        ),
     );
 }
 
@@ -381,28 +506,48 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
         // package)
         Target::Session if dirs.desktop.is_wayland() => {
             let gs = |key: &str, value: &str| {
-                run("gsettings", &["set", "org.gnome.desktop.interface", key, value]);
+                run(
+                    "gsettings",
+                    &["set", "org.gnome.desktop.interface", key, value],
+                );
             };
             gs("gtk-theme", &a.gtk_theme);
             gs("icon-theme", icons);
             gs("cursor-theme", &a.cursor_theme);
             gs("color-scheme", &scheme);
-            run("gsettings", &["set", "org.x.apps.portal", "color-scheme", &scheme]);
+            run(
+                "gsettings",
+                &["set", "org.x.apps.portal", "color-scheme", &scheme],
+            );
         }
         Target::Package(_) if dirs.desktop.is_wayland() => {}
         Target::Session => {
             xfconf("xsettings", "/Net/ThemeName", &a.gtk_theme);
             xfconf("xsettings", "/Net/IconThemeName", icons);
             xfconf("xsettings", "/Gtk/CursorThemeName", &a.cursor_theme);
-            run("gsettings", &["set", "org.gnome.desktop.interface", "color-scheme", &scheme]);
-            run("gsettings", &["set", "org.x.apps.portal", "color-scheme", &scheme]);
+            run(
+                "gsettings",
+                &[
+                    "set",
+                    "org.gnome.desktop.interface",
+                    "color-scheme",
+                    &scheme,
+                ],
+            );
+            run(
+                "gsettings",
+                &["set", "org.x.apps.portal", "color-scheme", &scheme],
+            );
         }
         Target::Package(root) => {
-            edit_file(&conf.join("xfce4/xfconf/xfce-perchannel-xml/xsettings.xml"), |t| {
-                set_xfconf_file(t, "ThemeName", &a.gtk_theme);
-                set_xfconf_file(t, "IconThemeName", icons);
-                set_xfconf_file(t, "CursorThemeName", &a.cursor_theme);
-            });
+            edit_file(
+                &conf.join("xfce4/xfconf/xfce-perchannel-xml/xsettings.xml"),
+                |t| {
+                    set_xfconf_file(t, "ThemeName", &a.gtk_theme);
+                    set_xfconf_file(t, "IconThemeName", icons);
+                    set_xfconf_file(t, "CursorThemeName", &a.cursor_theme);
+                },
+            );
             // A schema that is not installed (org.x.apps.portal without
             // xapp) is ignored by glib-compile-schemas. XFCE: the file of
             // packarch-xfce-settings, with the themes (used by GTK
@@ -421,7 +566,9 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
                 ),
             };
             write_file(
-                &root.join(format!("usr/share/glib-2.0/schemas/{name}.gschema.override")),
+                &root.join(format!(
+                    "usr/share/glib-2.0/schemas/{name}.gschema.override"
+                )),
                 &format!(
                     "# {what} of the default theme ({id}), written by packarch-skin render\n\
                      [org.gnome.desktop.interface]\n{themes}color-scheme={scheme}\n\n[org.x.apps.portal]\ncolor-scheme={scheme}\n"
@@ -432,15 +579,39 @@ pub(crate) fn write_gtk(dirs: &Dirs, id: &str, a: &Appearance, icons: &str, targ
     // Read by the GTK applications started without xfsettingsd
     for v in ["gtk-3.0", "gtk-4.0"] {
         edit_file(&conf.join(v).join("settings.ini"), |t| {
-            set_line(t, "gtk-theme-name=", &format!("gtk-theme-name={}", a.gtk_theme));
-            set_line(t, "gtk-icon-theme-name=", &format!("gtk-icon-theme-name={icons}"));
-            set_line(t, "gtk-cursor-theme-name=", &format!("gtk-cursor-theme-name={}", a.cursor_theme));
+            set_line(
+                t,
+                "gtk-theme-name=",
+                &format!("gtk-theme-name={}", a.gtk_theme),
+            );
+            set_line(
+                t,
+                "gtk-icon-theme-name=",
+                &format!("gtk-icon-theme-name={icons}"),
+            );
+            set_line(
+                t,
+                "gtk-cursor-theme-name=",
+                &format!("gtk-cursor-theme-name={}", a.cursor_theme),
+            );
         });
     }
     edit_file(&dirs.home.join(".gtkrc-2.0"), |t| {
-        set_line(t, "gtk-theme-name=", &format!("gtk-theme-name=\"{}\"", a.gtk_theme));
-        set_line(t, "gtk-icon-theme-name=", &format!("gtk-icon-theme-name=\"{icons}\""));
-        set_line(t, "gtk-cursor-theme-name=", &format!("gtk-cursor-theme-name=\"{}\"", a.cursor_theme));
+        set_line(
+            t,
+            "gtk-theme-name=",
+            &format!("gtk-theme-name=\"{}\"", a.gtk_theme),
+        );
+        set_line(
+            t,
+            "gtk-icon-theme-name=",
+            &format!("gtk-icon-theme-name=\"{icons}\""),
+        );
+        set_line(
+            t,
+            "gtk-cursor-theme-name=",
+            &format!("gtk-cursor-theme-name=\"{}\"", a.cursor_theme),
+        );
     });
     edit_file(&dirs.home.join(".icons/default/index.theme"), |t| {
         set_line(t, "Inherits=", &format!("Inherits={}", a.cursor_theme));
@@ -460,9 +631,16 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
         run(
             "dunstify",
             &[
-                "-u", "normal", "-h", "string:x-dunst-stack-tag:applytheme",
-                "-i", "/usr/share/packarch/icons/dunst/themes.png",
-                &format!("Application du style : {}", entry.display_name(Some(&theme))),
+                "-u",
+                "normal",
+                "-h",
+                "string:x-dunst-stack-tag:applytheme",
+                "-i",
+                "/usr/share/packarch/icons/dunst/themes.png",
+                &format!(
+                    "Application du style : {}",
+                    entry.display_name(Some(&theme))
+                ),
             ],
         );
     }
@@ -483,12 +661,18 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     if session {
         for head in 0..=10 {
             let h = format!("--head={head}");
-            run("nitrogen", &[h.as_str(), "--save", "--set-zoom-fill", &wallpaper]);
+            run(
+                "nitrogen",
+                &[h.as_str(), "--save", "--set-zoom-fill", &wallpaper],
+            );
         }
     } else {
         // The theme directory of the package is not the one of the user
         if !Path::new(&theme.wallpaper).is_absolute() {
-            return Err(format!("{id} : le fond d'écran doit être un chemin absolu : {}", theme.wallpaper));
+            return Err(format!(
+                "{id} : le fond d'écran doit être un chemin absolu : {}",
+                theme.wallpaper
+            ));
         }
         let mut cfg = String::new();
         for head in 0..=10 {
@@ -503,9 +687,15 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
         "[color]\n\nBACKGROUND = {}\nFOREGROUND = {}\nALTBACKGROUND = {}\nALTFOREGROUND = {}\nACCENT = {}\n\n",
         c.bar_bg.text, c.bar_fg.text, c.bar_alt_bg.text, c.bar_alt_fg.text, c.bar_accent.text
     );
-    let names = ["BLACK", "RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN", "WHITE"];
+    let names = [
+        "BLACK", "RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN", "WHITE",
+    ];
     for (i, col) in c.palette.iter().enumerate() {
-        let n = if i < 8 { names[i].to_string() } else { format!("ALT{}", names[i - 8]) };
+        let n = if i < 8 {
+            names[i].to_string()
+        } else {
+            format!("ALT{}", names[i - 8])
+        };
         colors += &format!("{n} = {}\n", col.text);
     }
     if !c.gradient.is_empty() {
@@ -523,9 +713,21 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     write_file(&pbar.join("colors.ini"), &colors);
     if theme.polybar.polywins {
         edit_file(&pbar.join("scripts/polywins.sh"), |t| {
-            set_line(t, "active_text_color=", &format!("active_text_color='{}'", c.bar_accent.text));
-            set_line(t, "inactive_text_color=", &format!("inactive_text_color='{}'", c.polywins_inactive.text));
-            set_line(t, "minimized_text_color=", &format!("minimized_text_color='{}'", c.bar_alt_fg.text));
+            set_line(
+                t,
+                "active_text_color=",
+                &format!("active_text_color='{}'", c.bar_accent.text),
+            );
+            set_line(
+                t,
+                "inactive_text_color=",
+                &format!("inactive_text_color='{}'", c.polywins_inactive.text),
+            );
+            set_line(
+                t,
+                "minimized_text_color=",
+                &format!("minimized_text_color='{}'", c.bar_alt_fg.text),
+            );
         });
     }
 
@@ -536,7 +738,14 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
             set_line(t, "border=", &format!("border='{border}'"));
         });
     }
-    for s in ["rofi-askpass", "rofi-bluetooth", "rofi-launcher", "rofi-powermenu", "rofi-runner", "rofi-screenshot"] {
+    for s in [
+        "rofi-askpass",
+        "rofi-bluetooth",
+        "rofi-launcher",
+        "rofi-powermenu",
+        "rofi-runner",
+        "rofi-screenshot",
+    ] {
         edit_file(&obox.join("scripts").join(s), |t| {
             set_line(t, "STYLE=", &format!("STYLE=\"{id}\""));
         });
@@ -544,7 +753,11 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     // Icon theme (with the folder color of the theme)
     let a = &theme.appearance;
     let icons = icon_theme_for(a, target);
-    let rofi_icons = if a.rofi_icons == a.icon_theme { &icons } else { &a.rofi_icons };
+    let rofi_icons = if a.rofi_icons == a.icon_theme {
+        &icons
+    } else {
+        &a.rofi_icons
+    };
 
     let rofi = tdir.join("rofi");
     let r = &c.rofi;
@@ -566,10 +779,20 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
         _ => nm_theme.display().to_string(),
     };
     edit_file(&conf.join("networkmanager-dmenu/config.ini"), |t| {
-        set_line(t, "dmenu_command = ", &format!("dmenu_command = rofi -dmenu -theme {nm_theme}"));
+        set_line(
+            t,
+            "dmenu_command = ",
+            &format!("dmenu_command = rofi -dmenu -theme {nm_theme}"),
+        );
     });
 
-    // Terminal (kitty)
+    // Terminal: Ghostty (session only: its configuration is the one of
+    // packarch-system-settings), and kitty for the accounts that still have
+    // its configuration
+    if session {
+        write_ghostty(conf, Some(&c), f);
+        reload_ghostty();
+    }
     let kitty = conf.join("kitty");
     if kitty.join("fonts.conf").is_file() && kitty.join("colors.conf").is_file() {
         write_file(&kitty.join("colors.conf"), &kitty_colors(&c));
@@ -580,7 +803,11 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
 
     // Geany
     edit_file(&conf.join("geany/geany.conf"), |t| {
-        set_line(t, "color_scheme=", &format!("color_scheme={}", a.geany_colors));
+        set_line(
+            t,
+            "color_scheme=",
+            &format!("color_scheme={}", a.geany_colors),
+        );
     });
 
     write_gtk(dirs, id, a, &icons, target);
@@ -630,7 +857,11 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
                 &ff,
                 &format!(
                     "{FASTFETCH_MARK}\n{{\n  \"logo\": {{ {FASTFETCH_LOGO}, \"color\": {{ \"1\": \"{t}\", \"2\": \"{t}\" }} }},\n  \"display\": {{ \"color\": {{ \"keys\": \"{t}\", \"title\": \"{t}\" }} }},\n  \"modules\": [{}]\n}}\n",
-                    FASTFETCH_MODULES.iter().map(|m| format!("\"{m}\"")).collect::<Vec<_>>().join(", "),
+                    FASTFETCH_MODULES
+                        .iter()
+                        .map(|m| format!("\"{m}\""))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     t = col.text
                 ),
             ),
@@ -644,16 +875,41 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
     let pc = &theme.picom;
     edit_file(&conf.join("picom.conf"), |t| {
         set_line(t, "backend = ", &format!("backend = \"{}\";", pc.backend));
-        set_block(t, "#-cr-start", "#-cr-end", &format!("corner-radius = {};", pc.corner_radius));
-        set_line(t, "shadow-radius = ", &format!("shadow-radius = {};", pc.shadow_radius));
-        set_line(t, "shadow-opacity = ", &format!("shadow-opacity = {};", pc.shadow_opacity));
+        set_block(
+            t,
+            "#-cr-start",
+            "#-cr-end",
+            &format!("corner-radius = {};", pc.corner_radius),
+        );
+        set_line(
+            t,
+            "shadow-radius = ",
+            &format!("shadow-radius = {};", pc.shadow_radius),
+        );
+        set_line(
+            t,
+            "shadow-opacity = ",
+            &format!("shadow-opacity = {};", pc.shadow_opacity),
+        );
         // Commented in picom.conf: added after shadow-opacity
         let color = format!("shadow-color = \"{}\";", c.shadow.text);
         set_or_insert(t, "shadow-color = ", &color, "shadow-opacity = ");
-        set_line(t, "shadow-offset-x = ", &format!("shadow-offset-x = {};", pc.shadow_offset_x));
-        set_line(t, "shadow-offset-y = ", &format!("shadow-offset-y = {};", pc.shadow_offset_y));
+        set_line(
+            t,
+            "shadow-offset-x = ",
+            &format!("shadow-offset-x = {};", pc.shadow_offset_x),
+        );
+        set_line(
+            t,
+            "shadow-offset-y = ",
+            &format!("shadow-offset-y = {};", pc.shadow_offset_y),
+        );
         set_line(t, "method = ", &format!("method = \"{}\";", pc.blur_method));
-        set_line(t, "strength = ", &format!("strength = {};", pc.blur_strength));
+        set_line(
+            t,
+            "strength = ",
+            &format!("strength = {};", pc.blur_strength),
+        );
     });
 
     if session {
@@ -665,12 +921,22 @@ pub fn apply(dirs: &Dirs, entry: &Entry, target: Target) -> Result<(), String> {
 
 /// Window border theme of xfwm4
 fn xfwm4_theme(theme: &Theme) -> &str {
-    theme.xfce.xfwm4_theme.as_deref().unwrap_or(&theme.appearance.gtk_theme)
+    theme
+        .xfce
+        .xfwm4_theme
+        .as_deref()
+        .unwrap_or(&theme.appearance.gtk_theme)
 }
 
 /// Application of a theme to the XFCE desktop (the fonts, chosen in its
 /// settings, are kept)
-fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Target) -> Result<(), String> {
+fn apply_xfce(
+    dirs: &Dirs,
+    entry: &Entry,
+    theme: &Theme,
+    c: &Colors,
+    target: Target,
+) -> Result<(), String> {
     let id = &entry.id;
     let conf = &dirs.config;
     let a = &theme.appearance;
@@ -678,17 +944,29 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
     let wallpaper = entry.dir.join(&theme.wallpaper);
     let wallpaper = wallpaper.to_string_lossy();
     if !session && !Path::new(&theme.wallpaper).is_absolute() {
-        return Err(format!("{id} : le fond d'écran doit être un chemin absolu : {}", theme.wallpaper));
+        return Err(format!(
+            "{id} : le fond d'écran doit être un chemin absolu : {}",
+            theme.wallpaper
+        ));
     }
     let xfwm4 = xfwm4_theme(theme);
     let icons = icon_theme_for(a, target);
-    let palette = c.palette.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join(";");
+    let palette = c
+        .palette
+        .iter()
+        .map(|p| p.text.as_str())
+        .collect::<Vec<_>>()
+        .join(";");
     let (bg, fg, accent) = (&c.term_bg.text, &c.term_fg.text, &c.bar_accent.text);
     let cursor = &c.term_cursor.as_ref().unwrap_or(&c.bar_accent).text;
 
     write_gtk(dirs, id, a, &icons, target);
     edit_file(&conf.join("geany/geany.conf"), |t| {
-        set_line(t, "color_scheme=", &format!("color_scheme={}", a.geany_colors));
+        set_line(
+            t,
+            "color_scheme=",
+            &format!("color_scheme={}", a.geany_colors),
+        );
     });
 
     match target {
@@ -710,7 +988,10 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
             run(
                 "notify-send",
                 &[
-                    "-a", "Thèmes", "-i", "preferences-desktop-theme",
+                    "-a",
+                    "Thèmes",
+                    "-i",
+                    "preferences-desktop-theme",
                     &format!("Thème appliqué : {}", entry.display_name(Some(theme))),
                 ],
             );
@@ -722,11 +1003,16 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
                     set_line(
                         t,
                         &format!("<property name=\"{key}\" "),
-                        &format!("<property name=\"{key}\" type=\"string\" value=\"{}\"/>", xml_escape(&wallpaper)),
+                        &format!(
+                            "<property name=\"{key}\" type=\"string\" value=\"{}\"/>",
+                            xml_escape(&wallpaper)
+                        ),
                     );
                 }
             });
-            edit_file(&xml.join("xfwm4.xml"), |t| set_xfconf_file(t, "theme", xfwm4));
+            edit_file(&xml.join("xfwm4.xml"), |t| {
+                set_xfconf_file(t, "theme", xfwm4)
+            });
             xfce::render_button(dirs, id)?;
             edit_file(&conf.join("xfce4/terminal/terminalrc"), |t| {
                 set_line(t, "ColorUseTheme=", "ColorUseTheme=FALSE");
@@ -736,10 +1022,41 @@ fn apply_xfce(dirs: &Dirs, entry: &Entry, theme: &Theme, c: &Colors, target: Tar
                 set_line(t, "ColorCursor=", &format!("ColorCursor={cursor}"));
                 set_line(t, "ColorBoldUseDefault=", "ColorBoldUseDefault=TRUE");
                 set_line(t, "ColorPalette=", &format!("ColorPalette={palette}"));
-                set_line(t, "TabActivityColor=", &format!("TabActivityColor={accent}"));
+                set_line(
+                    t,
+                    "TabActivityColor=",
+                    &format!("TabActivityColor={accent}"),
+                );
             });
         }
     }
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ghostty_files() {
+        let text = std::fs::read_to_string(
+            "../myrepo-pkgs/packarch-openbox-settings/files/etc/skel/.config/openbox/themes/packarch/theme.toml",
+        );
+        // Theme of the Packarch repositories when they are cloned side by side
+        let Ok(text) = text else { return };
+        let theme: Theme = toml::from_str(&text).unwrap();
+        let c = resolve(&theme).unwrap();
+        let t = ghostty_colors(&c);
+        assert!(t.contains("\nbackground = #"), "{t}");
+        assert!(t.contains("\ncursor-color = #"), "{t}");
+        assert_eq!(
+            t.lines().filter(|l| l.starts_with("palette = ")).count(),
+            16
+        );
+        assert!(t.contains("palette = 15=#"), "{t}");
+        assert_eq!(
+            ghostty_fonts("JetBrainsMono Nerd Font", 10),
+            "# Police du terminal, écrite par packarch-skin\nfont-family = JetBrainsMono Nerd Font\nfont-size = 10\n"
+        );
+    }
+}

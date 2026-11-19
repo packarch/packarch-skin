@@ -51,7 +51,11 @@ impl Rgb {
             return (0.0, 0.0, l);
         }
         let d = max - min;
-        let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+        let s = if l > 0.5 {
+            d / (2.0 - max - min)
+        } else {
+            d / (max + min)
+        };
         let h = if max == self.r {
             (self.g - self.b) / d + if self.g < self.b { 6.0 } else { 0.0 }
         } else if max == self.g {
@@ -75,7 +79,11 @@ impl Rgb {
             _ => (c, 0.0, x),
         };
         let m = l - c / 2.0;
-        Rgb { r: r + m, g: g + m, b: b + m }
+        Rgb {
+            r: r + m,
+            g: g + m,
+            b: b + m,
+        }
     }
 
     /// HSL lightness + amount (pastel lighten)
@@ -86,13 +94,23 @@ impl Rgb {
 
     fn to_lab(self) -> (f64, f64, f64) {
         let lin = |c: f64| {
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
         };
         let (r, g, b) = (lin(self.r), lin(self.g), lin(self.b));
         let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
         let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
         let z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
-        let f = |t: f64| if t > 216.0 / 24389.0 { t.cbrt() } else { (24389.0 / 27.0 * t + 16.0) / 116.0 };
+        let f = |t: f64| {
+            if t > 216.0 / 24389.0 {
+                t.cbrt()
+            } else {
+                (24389.0 / 27.0 * t + 16.0) / 116.0
+            }
+        };
         let (fx, fy, fz) = (f(x), f(y), f(z));
         (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
     }
@@ -103,7 +121,11 @@ impl Rgb {
         let fz = fy - b / 200.0;
         let finv = |t: f64| {
             let t3 = t * t * t;
-            if t3 > 216.0 / 24389.0 { t3 } else { (116.0 * t - 16.0) * 27.0 / 24389.0 }
+            if t3 > 216.0 / 24389.0 {
+                t3
+            } else {
+                (116.0 * t - 16.0) * 27.0 / 24389.0
+            }
         };
         let (x, y, z) = (finv(fx) * 0.95047, finv(fy), finv(fz) * 1.08883);
         let r = 3.2406 * x - 1.5372 * y - 0.4986 * z;
@@ -111,9 +133,17 @@ impl Rgb {
         let bb = 0.0557 * x - 0.2040 * y + 1.0570 * z;
         let gam = |c: f64| {
             let c = c.clamp(0.0, 1.0);
-            if c <= 0.0031308 { 12.92 * c } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
+            if c <= 0.0031308 {
+                12.92 * c
+            } else {
+                1.055 * c.powf(1.0 / 2.4) - 0.055
+            }
         };
-        Rgb { r: gam(r), g: gam(g), b: gam(bb) }
+        Rgb {
+            r: gam(r),
+            g: gam(g),
+            b: gam(bb),
+        }
     }
 
     /// `n` colors from `self` to `other`, interpolated in Lab (pastel gradient)
@@ -122,7 +152,11 @@ impl Rgb {
         let (l2, a2, b2) = other.to_lab();
         (0..n)
             .map(|i| {
-                let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
+                let t = if n > 1 {
+                    i as f64 / (n - 1) as f64
+                } else {
+                    0.0
+                };
                 Rgb::from_lab(l1 + (l2 - l1) * t, a1 + (a2 - a1) * t, b1 + (b2 - b1) * t)
             })
             .collect()
@@ -145,7 +179,11 @@ pub struct Palette<'a> {
 
 impl<'a> Palette<'a> {
     pub fn new(defs: &'a BTreeMap<String, String>) -> Palette<'a> {
-        Palette { defs, cache: BTreeMap::new(), gradient: Vec::new() }
+        Palette {
+            defs,
+            cache: BTreeMap::new(),
+            gradient: Vec::new(),
+        }
     }
 
     /// Value of the color NAME of the table (or gradientN)
@@ -162,7 +200,10 @@ impl<'a> Palette<'a> {
         if let Some(c) = self.cache.get(name) {
             return Ok(c.clone());
         }
-        if let Some(n) = name.strip_prefix("gradient").and_then(|n| n.parse::<usize>().ok()) {
+        if let Some(n) = name
+            .strip_prefix("gradient")
+            .and_then(|n| n.parse::<usize>().ok())
+        {
             return self
                 .gradient
                 .get(n)
@@ -187,10 +228,17 @@ impl<'a> Palette<'a> {
         let e = expr.trim();
         if e.starts_with('#') {
             let rgb = Rgb::parse(e).ok_or_else(|| format!("couleur invalide : « {e} »"))?;
-            return Ok(Color { text: e.to_string(), rgb });
+            return Ok(Color {
+                text: e.to_string(),
+                rgb,
+            });
         }
         for (func, sign) in [("lighten", 1.0), ("darken", -1.0)] {
-            if let Some(args) = e.strip_prefix(func).map(str::trim_start).and_then(|r| r.strip_prefix('(')) {
+            if let Some(args) = e
+                .strip_prefix(func)
+                .map(str::trim_start)
+                .and_then(|r| r.strip_prefix('('))
+            {
                 let args = args
                     .strip_suffix(')')
                     .ok_or_else(|| format!("parenthèse manquante : « {e} »"))?;
@@ -203,10 +251,16 @@ impl<'a> Palette<'a> {
                     .map_err(|_| format!("valeur invalide dans « {e} »"))?;
                 let base = self.eval_in(inner, stack)?;
                 let rgb = base.rgb.lighten(sign * amount);
-                return Ok(Color { text: rgb.hex(), rgb });
+                return Ok(Color {
+                    text: rgb.hex(),
+                    rgb,
+                });
             }
         }
-        if e.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') && !e.is_empty() {
+        if e.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            && !e.is_empty()
+        {
             return self.named(e, stack);
         }
         Err(format!("expression de couleur invalide : « {e} »"))
@@ -220,7 +274,10 @@ mod tests {
     #[test]
     fn rgb_float() {
         // pastel format rgb-float, without "rgb(", ")" and spaces
-        assert_eq!(Rgb::parse("#5294E2").unwrap().rgb_float(), "0.322,0.580,0.886");
+        assert_eq!(
+            Rgb::parse("#5294E2").unwrap().rgb_float(),
+            "0.322,0.580,0.886"
+        );
     }
 
     #[test]
@@ -261,6 +318,9 @@ mod tests {
         assert_eq!(g[6].hex(), "#2a2e37");
         // pastel gradient -n 7 '#1e2128' '#2a2e37'
         let hex: Vec<String> = g.iter().map(|c| c.hex()).collect();
-        assert_eq!(hex[1..6], ["#20232a", "#22252d", "#24272f", "#262a32", "#282c34"]);
+        assert_eq!(
+            hex[1..6],
+            ["#20232a", "#22252d", "#24272f", "#262a32", "#282c34"]
+        );
     }
 }

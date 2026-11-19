@@ -262,7 +262,9 @@ pub struct Labwc {
 
 impl Default for Labwc {
     fn default() -> Labwc {
-        Labwc { lock_ring_opacity: 0.5 }
+        Labwc {
+            lock_ring_opacity: 0.5,
+        }
     }
 }
 
@@ -276,8 +278,7 @@ pub struct Entry {
 impl Entry {
     pub fn load(&self) -> Result<Theme, String> {
         let file = self.dir.join("theme.toml");
-        let text = fs::read_to_string(&file)
-            .map_err(|e| format!("{} : {e}", file.display()))?;
+        let text = fs::read_to_string(&file).map_err(|e| format!("{} : {e}", file.display()))?;
         toml::from_str(&text).map_err(|e| format!("{} : {e}", file.display()))
     }
 
@@ -288,7 +289,9 @@ impl Entry {
         if own.is_file() {
             return Some(own);
         }
-        icons.map(|d| d.join(format!("{}.png", self.id))).filter(|p| p.is_file())
+        icons
+            .map(|d| d.join(format!("{}.png", self.id)))
+            .filter(|p| p.is_file())
     }
 
     pub fn display_name(&self, theme: Option<&Theme>) -> String {
@@ -310,7 +313,10 @@ pub fn list(dir: &Path) -> Vec<Entry> {
         .flatten()
         .flatten()
         .filter(|e| e.path().join("theme.toml").is_file())
-        .map(|e| Entry { id: e.file_name().to_string_lossy().into_owned(), dir: e.path() })
+        .map(|e| Entry {
+            id: e.file_name().to_string_lossy().into_owned(),
+            dir: e.path(),
+        })
         .collect();
     v.sort_by(|a, b| a.id.cmp(&b.id));
     v

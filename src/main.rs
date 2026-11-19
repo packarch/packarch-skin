@@ -24,7 +24,7 @@
 //! Packarch (XDG_CURRENT_DESKTOP, or the configuration of
 //! packarch-desktop-settings without Openbox themes): "apply" sets the
 //! wallpaper, the Openbox window theme, buttons, fonts, rounded corners and
-//! shadows of packarch, the colors of waybar, rofi, mako, kitty and hyprlock
+//! shadows of packarch, the colors of waybar, rofi, mako, Ghostty and hyprlock
 //! and the GTK, icon and cursor themes (packarch.rs).
 //!
 //! "render" writes the default theme (packarch) into the /etc/skel of these
@@ -47,7 +47,7 @@ mod xfce;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{exit, Command, Stdio};
+use std::process::{Command, Stdio, exit};
 
 const USAGE: &str = "\
 Usage : packarch-skin COMMANDE
@@ -195,13 +195,16 @@ impl Dirs {
             Desktop::Openbox | Desktop::Packarch => None,
             Desktop::Xfce => Some(root.join(XFCE_THEMES_OLD)),
         };
-        let system = var.and_then(env::var_os).map(PathBuf::from).unwrap_or_else(|| {
-            let skel = desktop.themes_in(&root.join(SKEL).join(".config"));
-            match old {
-                Some(o) if !skel.is_dir() && o.is_dir() => o,
-                _ => skel,
-            }
-        });
+        let system = var
+            .and_then(env::var_os)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                let skel = desktop.themes_in(&root.join(SKEL).join(".config"));
+                match old {
+                    Some(o) if !skel.is_dir() && o.is_dir() => o,
+                    _ => skel,
+                }
+            });
         dirs.system = Some(system);
         dirs
     }
@@ -229,13 +232,27 @@ impl Dirs {
     fn with(home: PathBuf, config: PathBuf, root: &Path, desktop: Desktop) -> Dirs {
         let themes = desktop.themes_in(&config);
         let (state, thumbs) = match desktop {
-            Desktop::Packarch => (config.join("packarch/.current_theme"), root.join(PACKARCH_THUMBS)),
+            Desktop::Packarch => (
+                config.join("packarch/.current_theme"),
+                root.join(PACKARCH_THUMBS),
+            ),
             // The current theme: file of the former theme switcher of XFCE
             // (read by init-backdrop.sh of packarch-xfce-settings)
-            Desktop::Xfce => (config.join("xfcethemes/.current_theme"), root.join(XFCE_THUMBS)),
+            Desktop::Xfce => (
+                config.join("xfcethemes/.current_theme"),
+                root.join(XFCE_THUMBS),
+            ),
             Desktop::Openbox => (themes.join(".current"), config.join("openbox/icons")),
         };
-        Dirs { home, config, themes, system: None, thumbs, state, desktop }
+        Dirs {
+            home,
+            config,
+            themes,
+            system: None,
+            thumbs,
+            state,
+            desktop,
+        }
     }
 
     /// The themes of the user (or of the package for render)
@@ -252,11 +269,15 @@ impl Dirs {
         let old = self.config.join("packarch-skin/themes");
         for e in theme::list(&old) {
             let to = self.themes.join(&e.id);
-            if !to.exists() && fs::create_dir_all(&self.themes).is_ok() && fs::rename(&e.dir, &to).is_ok() {
+            if !to.exists()
+                && fs::create_dir_all(&self.themes).is_ok()
+                && fs::rename(&e.dir, &to).is_ok()
+            {
                 eprintln!("Thème {} déplacé dans {}", e.id, self.themes.display());
             }
         }
-        let _ = fs::remove_dir(&old).and_then(|()| fs::remove_dir(self.config.join("packarch-skin")));
+        let _ =
+            fs::remove_dir(&old).and_then(|()| fs::remove_dir(self.config.join("packarch-skin")));
         for e in theme::list(system) {
             let to = self.themes.join(&e.id);
             let former = RENAMED_THEMES
@@ -294,7 +315,8 @@ impl Dirs {
 /// packarch-pi: packarch-theme tells the desktop apart)
 fn is_packarch(config: &Path, root: &Path) -> bool {
     config.join("packarch/packarch-theme").is_file()
-        && (root.join(PACKARCH_THEMES).is_dir() || env::var_os("PACKARCH_SKIN_PACKARCH_THEMES").is_some())
+        && (root.join(PACKARCH_THEMES).is_dir()
+            || env::var_os("PACKARCH_SKIN_PACKARCH_THEMES").is_some())
 }
 
 /// PACKARCH_SKIN_DRY=1: the external commands are printed, not run (tests)
@@ -343,7 +365,10 @@ pub fn spawn(cmd: &str, args: &[&str], envs: &[(&str, &str)]) {
         return;
     }
     let mut c = Command::new(cmd);
-    c.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    c.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     for (k, v) in envs {
         c.env(k, v);
     }
@@ -378,7 +403,10 @@ fn find(dirs: &Dirs, id: &str) -> Result<theme::Entry, String> {
 }
 
 pub fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// "edit": theme.toml of ENTRY in the editor
@@ -400,8 +428,7 @@ fn edit(entry: &theme::Entry) -> Result<(), String> {
 
 /// COMMAND is in the PATH
 fn has_command(cmd: &str) -> bool {
-    env::var_os("PATH")
-        .is_some_and(|p| env::split_paths(&p).any(|d| d.join(cmd).is_file()))
+    env::var_os("PATH").is_some_and(|p| env::split_paths(&p).any(|d| d.join(cmd).is_file()))
 }
 
 fn openbox_menu(dirs: &Dirs) {
@@ -460,7 +487,9 @@ fn main() {
             }
         },
         Some("bar") => dirs.openbox_only("bar").and_then(|()| bar::launch(&dirs)),
-        Some("font") => dirs.openbox_only("font").and_then(|()| fonts::command(&dirs, &args[1..])),
+        Some("font") => dirs
+            .openbox_only("font")
+            .and_then(|()| fonts::command(&dirs, &args[1..])),
         Some("wallpaper") => {
             let id = arg(1).map(str::to_string).unwrap_or_else(|| current(&dirs));
             find(&dirs, &id).and_then(|e| {
@@ -473,7 +502,10 @@ fn main() {
             let all = dirs.list();
             let wanted: Vec<&str> = args[1..].iter().map(String::as_str).collect();
             let mut errors = 0;
-            for e in all.iter().filter(|e| wanted.is_empty() || wanted.contains(&e.id.as_str())) {
+            for e in all
+                .iter()
+                .filter(|e| wanted.is_empty() || wanted.contains(&e.id.as_str()))
+            {
                 match e.load().and_then(|t| apply::check(&t)) {
                     Ok(()) => println!("{} : ok", e.id),
                     Err(err) => {
@@ -482,7 +514,11 @@ fn main() {
                     }
                 }
             }
-            if errors > 0 { Err(format!("{errors} thème(s) en erreur")) } else { Ok(()) }
+            if errors > 0 {
+                Err(format!("{errors} thème(s) en erreur"))
+            } else {
+                Ok(())
+            }
         }
         Some("edit") => {
             let id = arg(1).map(str::to_string).unwrap_or_else(|| current(&dirs));
@@ -527,7 +563,11 @@ mod tests {
         let mut dirs = Dirs::with(home.clone(), home.join(".config"), &base, Desktop::Packarch);
         for id in user {
             fs::create_dir_all(dirs.themes.join(id)).unwrap();
-            fs::write(dirs.themes.join(id).join("theme.toml"), "wallpaper = \"y\"\n").unwrap();
+            fs::write(
+                dirs.themes.join(id).join("theme.toml"),
+                "wallpaper = \"y\"\n",
+            )
+            .unwrap();
         }
         dirs.system = Some(system);
         dirs
