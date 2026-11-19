@@ -26,7 +26,7 @@ The packages are built from the
 packarch-skin list                    available themes (identifier and name)
 packarch-skin current                 current theme
 packarch-skin apply [THEME]           applies THEME (default: the current theme)
-packarch-skin render ROOT [THEME]     writes THEME (default: "default") into the files of
+packarch-skin render ROOT [THEME]     writes THEME (default: "packarch") into the files of
                                       ROOT/etc/skel, without running anything (package build)
 packarch-skin bar                     relaunches the bar of the current theme (Openbox)
 packarch-skin font [TARGET]           font of each program, or of TARGET (Openbox)

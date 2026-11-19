@@ -1,6 +1,6 @@
 [package]
 name = "packarch-skin"
-version = "1.9.0"
+version = "1.10.0"
 edition = "2024"
 description = "Theme (skin) chooser of the Packarch Openbox, XFCE and labwc desktops"
 license = "GPL-3.0-or-later"

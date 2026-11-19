@@ -27,8 +27,13 @@
 //! shadows of packarch, the colors of waybar, rofi, mako, kitty and hyprlock
 //! and the GTK, icon and cursor themes (packarch.rs).
 //!
-//! "render" writes the default theme into the /etc/skel of these packages
-//! when they are built, so that the first session starts with it.
+//! "render" writes the default theme (packarch) into the /etc/skel of these
+//! packages when they are built, so that the first session starts with it.
+//!
+//! The theme "classic" was named "default" before packarch-skin 1.10.0 (the
+//! default theme is now "packarch"): an account that still has its theme
+//! "default" keeps it (its scripts and panel point to that directory) and
+//! does not get "classic" as a second copy of it.
 
 mod apply;
 mod bar;
@@ -50,7 +55,7 @@ Usage : packarch-skin COMMANDE
   list                    thèmes disponibles (identifiant et nom)
   current                 thème courant
   apply [THÈME]           applique THÈME (par défaut le thème courant)
-  render RACINE [THÈME]   écrit THÈME (par défaut « default ») dans les
+  render RACINE [THÈME]   écrit THÈME (par défaut « packarch ») dans les
                           fichiers de RACINE/etc/skel, sans rien lancer
                           (construction des paquets packarch-openbox-settings,
                           packarch-xfce-settings et packarch-desktop-settings)
@@ -254,7 +259,11 @@ impl Dirs {
         let _ = fs::remove_dir(&old).and_then(|()| fs::remove_dir(self.config.join("packarch-skin")));
         for e in theme::list(system) {
             let to = self.themes.join(&e.id);
-            if !to.exists() {
+            let former = RENAMED_THEMES
+                .iter()
+                .find(|(id, _)| *id == e.id)
+                .is_some_and(|(_, old)| self.themes.join(old).join("theme.toml").is_file());
+            if !to.exists() && !former {
                 if let Err(err) = copy_dir(&e.dir, &to) {
                     eprintln!("packarch-skin : {} : {err}", to.display());
                 }
@@ -343,14 +352,22 @@ pub fn spawn(cmd: &str, args: &[&str], envs: &[(&str, &str)]) {
     }
 }
 
-/// Identifier of the current theme (themes/.current with Openbox), "default"
-/// if none or if it is not a theme (a color of the former XFCE theme switcher)
+/// Theme of the first session, and of an account without a current theme
+pub const DEFAULT_THEME: &str = "packarch";
+
+/// Themes of the system renamed: (current id, former id). An account that
+/// has the theme under its former id keeps it and does not get it again.
+const RENAMED_THEMES: &[(&str, &str)] = &[("classic", "default")];
+
+/// Identifier of the current theme (themes/.current with Openbox),
+/// DEFAULT_THEME if none or if it is not a theme (a color of the former XFCE
+/// theme switcher)
 pub fn current(dirs: &Dirs) -> String {
     fs::read_to_string(&dirs.state)
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && dirs.list().iter().any(|e| e.id == *s))
-        .unwrap_or_else(|| "default".into())
+        .unwrap_or_else(|| DEFAULT_THEME.into())
 }
 
 fn find(dirs: &Dirs, id: &str) -> Result<theme::Entry, String> {
@@ -434,7 +451,7 @@ fn main() {
             Some(root) => {
                 let root = PathBuf::from(root);
                 let skel = Dirs::at(&root);
-                let id = arg(2).unwrap_or("default");
+                let id = arg(2).unwrap_or(DEFAULT_THEME);
                 find(&skel, id).and_then(|e| apply::apply(&skel, &e, apply::Target::Package(&root)))
             }
             None => {
@@ -490,5 +507,55 @@ fn main() {
     if let Err(e) = result {
         eprintln!("packarch-skin : {e}");
         exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Themes of the system: classic and packarch; THEMES of the user
+    fn setup(name: &str, user: &[&str]) -> Dirs {
+        let base = env::temp_dir().join(format!("packarch-skin-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let system = base.join("system");
+        for id in ["classic", "packarch"] {
+            fs::create_dir_all(system.join(id)).unwrap();
+            fs::write(system.join(id).join("theme.toml"), "wallpaper = \"x\"\n").unwrap();
+        }
+        let home = base.join("home");
+        let mut dirs = Dirs::with(home.clone(), home.join(".config"), &base, Desktop::Packarch);
+        for id in user {
+            fs::create_dir_all(dirs.themes.join(id)).unwrap();
+            fs::write(dirs.themes.join(id).join("theme.toml"), "wallpaper = \"y\"\n").unwrap();
+        }
+        dirs.system = Some(system);
+        dirs
+    }
+
+    fn ids(dirs: &Dirs) -> Vec<String> {
+        let mut v: Vec<String> = dirs.list().into_iter().map(|e| e.id).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn renamed_theme_not_copied_twice() {
+        // Account of packarch-skin 1.9: its "default" is "classic"
+        let dirs = setup("ancien", &["default"]);
+        dirs.add_missing_themes();
+        assert_eq!(ids(&dirs), ["default", "packarch"]);
+        // The current theme stays "default"; no current theme: packarch
+        fs::write(&dirs.state, "default\n").unwrap();
+        assert_eq!(current(&dirs), "default");
+        fs::remove_file(&dirs.state).unwrap();
+        assert_eq!(current(&dirs), DEFAULT_THEME);
+    }
+
+    #[test]
+    fn new_account_gets_classic() {
+        let dirs = setup("nouveau", &[]);
+        dirs.add_missing_themes();
+        assert_eq!(ids(&dirs), ["classic", "packarch"]);
     }
 }
