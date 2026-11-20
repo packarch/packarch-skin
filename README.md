@@ -129,7 +129,7 @@ so that they stand out from the windows (colors of the window theme). Also: the 
 again at each start of packarch and by the root applications), the bar of the theme (as its
 polybar on Openbox: `themes/<id>/waybar/config` and `style.css`, copied to
 `~/.config/packarch/waybar` with the `@color@` of the config replaced by the colors of the
-theme, and the scripts of `~/.config/labwc/` of older bars by those of `~/.config/packarch/`; colors, gradient and polybar font of the theme in `waybar/colors.css`; a theme of
+theme, and the scripts of `~/.config/labwc/` of older bars by those of `~/.config/packarch/` and their clock formats given the `L` of `std::format` (`{:L%A %d %B}`: without it waybar writes days and months in English); colors, gradient and polybar font of the theme in `waybar/colors.css`; a theme of
 `~/.config/packarch/themes` without bar takes the one of the system theme), the colors of rofi,
 mako and hyprlock (all in `~/.config/packarch`), of Ghostty and of Geany. Then it runs
 `packarch --reconfigure` and `~/.config/packarch/scripts/startup`, which relaunches swaybg,

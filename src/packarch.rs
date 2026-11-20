@@ -188,11 +188,21 @@ fn waybar_colors(c: &Colors, polybar_font: &str) -> String {
     t + "\n" + &bar_font(polybar_font)
 }
 
-/// waybar/config of the theme: its @NAME@ colors replaced
+/// Bar of a theme copied into ~/.config/packarch/themes by an older
+/// packarch-desktop-settings (a theme already there is never replaced),
+/// brought up to date
+fn waybar_update(text: &str) -> String {
+    // Scripts of the bars written for labwc (before 1.1)
+    text.replace("~/.config/labwc/", "~/.config/packarch/")
+        // Clock formats without the L of std::format (before 1.2-1): waybar
+        // writes the days and months in English whatever the locale
+        .replace("{:%", "{:L%")
+}
+
+/// waybar/config of the theme: its @NAME@ colors replaced, the bars of old
+/// copies of the themes brought up to date
 fn waybar_config(text: &str, c: &Colors) -> String {
-    // Scripts of the bars written for labwc (themes copied into
-    // ~/.config/packarch/themes before packarch-desktop-settings 1.1)
-    let mut t = text.replace("~/.config/labwc/", "~/.config/packarch/");
+    let mut t = waybar_update(text);
     for (name, col) in bar_colors(c) {
         t = t.replace(&format!("@{name}@"), &col.text);
     }
@@ -443,7 +453,7 @@ pub fn apply(
 
 #[cfg(test)]
 mod tests {
-    use super::{bar_font, rgba, shell_quote, titlebar_layout};
+    use super::{bar_font, rgba, shell_quote, titlebar_layout, waybar_update};
     use crate::color::{Color, Rgb};
 
     #[test]
@@ -473,6 +483,15 @@ mod tests {
         assert!(f.contains("font-weight: bold;"));
         let f = bar_font("Iosevka:size=11;3");
         assert!(f.contains("\"Iosevka\"") && f.contains("11pt") && f.contains("normal"));
+    }
+
+    #[test]
+    fn old_bars() {
+        let old = r#""format-alt": "{:%A %d %B %Y}", "on-click": "~/.config/labwc/scripts/x""#;
+        let new = r#""format-alt": "{:L%A %d %B %Y}", "on-click": "~/.config/packarch/scripts/x""#;
+        assert_eq!(waybar_update(old), new);
+        assert_eq!(waybar_update(new), new);
+        assert_eq!(waybar_update("{icon} {title:.25}"), "{icon} {title:.25}");
     }
 
     #[test]
